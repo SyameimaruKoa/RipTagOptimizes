@@ -11,7 +11,6 @@ class WorkflowManager:
     """ワークフローの進行を管理するクラス"""
     
     STEP_NAMES = {
-        0: "Music Center取り込み",
         1: "新規取り込み",
         2: "Demucs処理",
         3: "FLAC完成 (タグ・リネーム)",

@@ -102,6 +102,14 @@ class MainWindow(QMainWindow):
         toolbar.addAction(refresh_action)
         
         toolbar.addSeparator()
+        
+        # 一括処理ボタン
+        batch_action = QAction("🔄 一括処理", self)
+        batch_action.setToolTip("Step4~7を全アルバム一括処理します")
+        batch_action.triggered.connect(self.on_batch_process)
+        toolbar.addAction(batch_action)
+        
+        toolbar.addSeparator()
 
         # 作業破棄（ゴミ箱へ移動）
         discard_action = QAction("作業破棄", self)
@@ -115,6 +123,12 @@ class MainWindow(QMainWindow):
         settings_action = QAction("設定", self)
         settings_action.triggered.connect(self.on_settings)
         toolbar.addAction(settings_action)
+        
+        # ログビューアーボタン
+        log_viewer_action = QAction("📋 ログ", self)
+        log_viewer_action.setToolTip("ログファイルを表示します")
+        log_viewer_action.triggered.connect(self.on_show_log_viewer)
+        toolbar.addAction(log_viewer_action)
     
     def init_step_panels(self):
         """各ステップのパネルを初期化"""
@@ -231,7 +245,8 @@ class MainWindow(QMainWindow):
             # 現在のステップに応じたパネルを表示
             step = self.workflow.get_current_step()
             print(f"[DEBUG] Current step: {step}")
-            self.step_stack.setCurrentIndex(step)  # ステップ0 = index 0, ステップ1 = index 1...
+            # Step0はガイドパネル(index 0)、Step1以降は index = step
+            self.step_stack.setCurrentIndex(step)  # Step1 = index 1, Step2 = index 2...
             
             # パネルを更新
             current_panel = self.step_stack.currentWidget()
@@ -325,11 +340,60 @@ class MainWindow(QMainWindow):
     
     def on_settings(self):
         """設定ボタンが押されたときの処理"""
-        QMessageBox.information(
-            self,
-            "設定",
-            "設定画面は未実装です。\nconfig.ini を直接編集してください。"
-        )
+        from gui.settings_dialog import SettingsDialog
+        dialog = SettingsDialog(self.config, self)
+        if dialog.exec():
+            # 設定が保存された場合、config を再読み込み
+            self.config.load()
+            self.status_bar.showMessage("設定を更新しました", 3000)
+    
+    def on_show_log_viewer(self):
+        """ログビューアーボタンが押されたときの処理"""
+        if not self.current_album_folder or not os.path.isdir(self.current_album_folder):
+            QMessageBox.warning(self, "ログビューアー", "アルバムを選択してください。")
+            return
+        
+        from gui.log_viewer_dialog import LogViewerDialog
+        from logic.log_manager import get_logger
+        
+        logger = get_logger()
+        logger.set_album_folder(self.current_album_folder)
+        
+        dialog = LogViewerDialog(logger, self)
+        dialog.exec()
+    
+    def on_batch_process(self):
+        """一括処理ボタンが押されたときの処理"""
+        # WorkDirから全アルバムフォルダを取得
+        work_dir = self.config.get_directory("WorkDir")
+        if not work_dir or not os.path.isdir(work_dir):
+            QMessageBox.warning(self, "一括処理", "作業フォルダ (WorkDir) が設定されていません。")
+            return
+        
+        # アルバムフォルダを収集（state.jsonがあるもの）
+        album_folders = []
+        try:
+            for item_name in os.listdir(work_dir):
+                item_path = os.path.join(work_dir, item_name)
+                if os.path.isdir(item_path):
+                    state_file = os.path.join(item_path, "state.json")
+                    if os.path.exists(state_file):
+                        album_folders.append(item_path)
+        except Exception as e:
+            QMessageBox.critical(self, "エラー", f"アルバム一覧の取得に失敗しました:\n{e}")
+            return
+        
+        if not album_folders:
+            QMessageBox.information(self, "一括処理", "処理可能なアルバムが見つかりませんでした。")
+            return
+        
+        # 一括処理ダイアログを表示
+        from gui.batch_process_dialog import BatchProcessDialog
+        dialog = BatchProcessDialog(album_folders, self.config, self)
+        if dialog.exec():
+            # 完了後、アルバムリストを再スキャン
+            self.refresh_album_list()
+            self.status_bar.showMessage(f"一括処理完了", 5000)
 
     def on_discard_album(self):
         """選択中アルバムの作業フォルダをゴミ箱へ移動（作業破棄）"""

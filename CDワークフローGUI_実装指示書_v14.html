@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CD取り込み自動化ワークフロー・マスターGUI 実装指示書 (v14)</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f4f7f6;
+        }
+
+        h1 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 10px;
+            margin-top: 30px;
+        }
+
+        h2 {
+            color: #34495e;
+            border-left: 5px solid #3498db;
+            padding-left: 10px;
+            margin-top: 25px;
+            background-color: #e8f6f3;
+        }
+
+        h3 {
+            color: #2980b9;
+            margin-top: 20px;
+        }
+
+        code {
+            background-color: #fff3e0;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: Consolas, 'Courier New', Courier, monospace;
+            color: #e67e22;
+        }
+
+        pre {
+            background-color: #2d3436;
+            color: #dfe6e9;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-family: Consolas, 'Courier New', Courier, monospace;
+            border: 1px solid #b2bec3;
+        }
+
+        ul,
+        ol {
+            padding-left: 25px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        .note {
+            background-color: #fff3cd;
+            border-left: 5px solid #ffc107;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+
+        .status-legend {
+            background-color: #eef;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>CD取り込み自動化ワークフロー・マスターGUI 実装指示書 (v14)</h1>
+
+    <div class="note">
+        <strong>本書の位置づけ:</strong>
+        本書は、PySide6を用いたCDワークフローGUIの具体的な実装指針である。v14では、UIの詳細要件（Step3のリスト表示、Step1のサイドバー等）と最新のデータスキーマを完全に網羅した。
+        <br><strong>最終更新:</strong> 2025年11月9日
+    </div>
+
+    <h2>1. プロジェクト概要</h2>
+
+    <h3>1.1. 開発環境</h3>
+    <ul>
+        <li><strong>言語</strong>: Python 3.12</li>
+        <li><strong>フレームワーク</strong>: PySide6</li>
+        <li><strong>必須ライブラリ</strong>: <code>mutagen</code>, <code>send2trash</code></li>
+    </ul>
+
+    <hr>
+
+    <h2>2. 共通基盤の実装</h2>
+
+    <h3>設定・状態・ユーティリティ</h3>
+    <ul>
+        <li><strong>設定</strong>: <code>config.ini</code> は実行ファイルと同階層。ツールパスはPATHからも自動検出（警告付き）。</li>
+        <li><strong>状態</strong>: <code>state.json</code> はステップ遷移時、重要操作時、終了時に保存。</li>
+        <li><strong>禁止文字</strong>: ファイル名生成時は必ず <code>sanitize_filename()</code> で <code>\/:*?"<>|</code> を置換。</li>
+    </ul>
+
+    <hr>
+
+    <h2>3. 実装済み機能の詳細 (✅)</h2>
+
+    <div class="status-legend">
+        実装状況凡例: ✅ 完全実装済み | 🔶 部分実装済み | ❌ 未実装
+    </div>
+
+    <h3>Step 0: Music Center ガイド (✅)</h3>
+    <ul>
+        <li>Music Center 起動と手順案内。</li>
+    </ul>
+
+    <h3>Step 1: 新規取り込み (✅)</h3>
+    <ul>
+        <li><strong>UI強化</strong>: ファイルダイアログに独自のサイドバーショートカット（Music Center等）を追加。</li>
+        <li><strong>ロジック</strong>: <code>.flac</code> ファイルの存在チェックによる自動アルバム検出。二段階コピーで安全性確保。</li>
+    </ul>
+
+    <h3>Step 2: Demucs処理 (✅)</h3>
+    <ul>
+        <li>高度な自動除外（キーワード＋ペア曲推定）。</li>
+        <li><strong>リネーム</strong>: <code>(Inst)</code> を付与して取り込み。</li>
+    </ul>
+
+    <h3>Step 3: FLAC完成 (✅)</h3>
+    <ul>
+        <li><strong>UI実装</strong>: 左右の並列リストで新旧ファイルをペアリング。Inst曲には目立つバッジ（例: 金色背景のラベル）を付与。</li>
+        <li><strong>自動処理</strong>: トラック番号優先での紐づけ、<code>mutagen</code> によるアートワーク検査、<code>foobar2000</code>
+            によるReplayGain測定。</li>
+    </ul>
+
+    <h3>Step 4/5: AAC/Opus変換 (✅)</h3>
+    <ul>
+        <li>出力ファイル数の厳密なバリデーションと警告表示。</li>
+    </ul>
+
+    <h3>Step 7: 最終転送 (✅)</h3>
+    <ul>
+        <li>タブ切り替え式の3サブステップ (FLAC, AAC, Opus) で転送作業。</li>
+    </ul>
+
+    <hr>
+
+    <h2>4. 未実装・今後の実装課題 (🔶/❌)</h2>
+
+    <h3>優先度: 高</h3>
+    <ol>
+        <li><strong>Step 6 自動化 (🔶→✅)</strong>
+            <ul>
+                <li><code>magick</code> 実行を自動化し、<code>hasArtwork</code> フラグによるスキップを実装。</li>
+            </ul>
+        </li>
+        <li><strong>クリーンアップ機能 (❌)</strong>
+            <ul>
+                <li>Step 7 完了時に削除提案ダイアログを表示し、完了済みアルバムの一括削除機能を追加。</li>
+            </ul>
+        </li>
+    </ol>
+
+    <h3>優先度: 中</h3>
+    <ol>
+        <li><strong>設定画面の実装 (❌)</strong>
+            <ul>
+                <li><code>config.ini</code> をGUIから編集可能にする。</li>
+            </ul>
+        </li>
+        <li><strong>エラーログの充実 (🔶)</strong>
+            <ul>
+                <li>自動処理の標準エラー出力をログファイルに保存し、GUIから参照可能にする。</li>
+            </ul>
+        </li>
+    </ol>
+
+</body>
+
+</html>

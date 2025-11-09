@@ -28,13 +28,13 @@ class Step0MusicCenterPanel(QWidget):
         self.setLayout(layout)
         
         # タイトル
-        title = QLabel("<h2>Step 0: Music Center で CD を取り込む</h2>")
+        title = QLabel("<h2>Music Center で CD を取り込む</h2>")
         layout.addWidget(title)
         
         # 説明
         desc = QLabel(
-            "このステップでは、Music Center を使って CD から音楽を FLAC 形式で取り込みます。\n"
-            "取り込みが完了したら、次のステップ (Step 1) でワークフローに追加します。"
+            "Music Center を使って CD から音楽を FLAC 形式で取り込みます。\n"
+            "取り込みが完了したら、「新規取り込み」タブから Step 1 でワークフローに追加します。"
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)

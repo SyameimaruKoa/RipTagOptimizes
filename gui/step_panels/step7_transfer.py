@@ -421,22 +421,40 @@ class Step7TransferPanel(QWidget):
             self.step_completed.emit()
     
     def _delete_work_folder(self):
-        """作業フォルダを削除（内部処理）"""
+        """作業フォルダを削除（内部処理）- send2trash でゴミ箱へ"""
         if not self.album_folder or not os.path.exists(self.album_folder):
             return
         
         try:
-            import shutil
-            shutil.rmtree(self.album_folder)
-            print(f"[Step7] 作業フォルダを削除しました: {self.album_folder}")
-        except Exception as e:
-            # エラーが発生してもユーザーには通知しない（ログのみ）
-            print(f"[Step7] 作業フォルダの削除に失敗: {e}")
-            # 削除失敗の場合、ユーザーに通知
-            QMessageBox.warning(
+            from send2trash import send2trash
+            send2trash(self.album_folder)
+            print(f"[Step7] 作業フォルダをゴミ箱へ移動しました: {self.album_folder}")
+            QMessageBox.information(
                 self,
-                "警告",
-                f"作業フォルダの削除に失敗しました。\n\n"
-                f"手動で削除してください:\n{self.album_folder}\n\n"
-                f"エラー: {e}"
+                "完了",
+                f"作業フォルダをゴミ箱へ移動しました。\n\n"
+                f"フォルダ: {os.path.basename(self.album_folder)}"
             )
+        except Exception as e:
+            # send2trash 失敗時は shutil.rmtree でフォールバック
+            print(f"[Step7] send2trash 失敗、shutil.rmtree でリトライ: {e}")
+            try:
+                import shutil
+                shutil.rmtree(self.album_folder)
+                print(f"[Step7] 作業フォルダを削除しました（shutil.rmtree）: {self.album_folder}")
+                QMessageBox.information(
+                    self,
+                    "完了",
+                    f"作業フォルダを削除しました。\n\n"
+                    f"フォルダ: {os.path.basename(self.album_folder)}"
+                )
+            except Exception as e2:
+                # 両方失敗の場合のみユーザーに通知
+                print(f"[Step7] 作業フォルダの削除に失敗: {e2}")
+                QMessageBox.warning(
+                    self,
+                    "警告",
+                    f"作業フォルダの削除に失敗しました。\n\n"
+                    f"手動で削除してください:\n{self.album_folder}\n\n"
+                    f"エラー: {e2}"
+                )

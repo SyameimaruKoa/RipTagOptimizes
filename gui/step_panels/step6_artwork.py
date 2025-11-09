@@ -133,6 +133,10 @@ class Step6ArtworkPanel(QWidget):
         self.source_image = None
         self.lbl_source.setText("（未選択）")
         self.lbl_result.setText("")
+        
+        # hasArtwork チェック: false の場合はスキップ案内を表示
+        if self.workflow.state and self.workflow.state.has_artwork() == False:
+            self._show_no_artwork_message()
 
     # -------- actions ---------
     def on_extract_from_flac(self):
@@ -274,6 +278,21 @@ class Step6ArtworkPanel(QWidget):
     def on_complete(self):
         if not self.album_folder:
             return
+        
+        # hasArtwork == false の場合はスキップ確認
+        if self.workflow.state and self.workflow.state.has_artwork() == False:
+            reply = QMessageBox.question(
+                self,
+                "アートワークなし",
+                "このアルバムにはアートワークが埋め込まれていません。\n\n"
+                "Step 6 をスキップして次のステップへ進みますか?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            if reply == QMessageBox.Yes:
+                self.step_completed.emit()
+            return
+        
         jpg = os.path.join(self.album_folder, "_artwork_resized", "cover.jpg")
         webp = os.path.join(self.album_folder, "_artwork_resized", "cover.webp")
         if not (os.path.exists(jpg) and os.path.exists(webp)):
@@ -282,3 +301,13 @@ class Step6ArtworkPanel(QWidget):
         if self.workflow.state:
             self.workflow.state.set_artwork(True)
         self.step_completed.emit()
+    
+    def _show_no_artwork_message(self):
+        """アートワークなしの案内を表示"""
+        QMessageBox.information(
+            self,
+            "アートワークなし",
+            "このアルバムには FLAC にアートワークが埋め込まれていません。\n\n"
+            "Step 6 の処理は不要です。\n"
+            "「Step 6 完了」ボタンを押してスキップしてください。"
+        )

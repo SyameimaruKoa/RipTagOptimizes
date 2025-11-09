@@ -210,10 +210,23 @@ class Step4AacPanel(QWidget):
         for t in self.workflow.state.get_tracks():
             if t.get("finalFile"): total += 1
             if t.get("instrumentalFile"): total += 1
+        
         if got < total:
-            # 不足はログだけ（モーダル削減）
-            self.folder_list.addItem(QListWidgetItem(f"[WARN] AAC不足 {got}/{total}"))
-            return
+            # ファイル数不足: 確認ダイアログで警告
+            reply = QMessageBox.warning(
+                self,
+                "ファイル数不足",
+                f"AACファイル数が不足しています。\n\n"
+                f"期待: {total}個\n"
+                f"実際: {got}個\n\n"
+                f"変換が完了しているか確認してください。\n"
+                f"このまま次のステップに進みますか?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+        
         self.step_completed.emit()
 
     # ------------------------

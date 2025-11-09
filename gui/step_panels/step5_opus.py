@@ -221,8 +221,25 @@ class Step5OpusPanel(QWidget):
         got = 0
         if os.path.isdir(dst):
             got = len([f for f in os.listdir(dst) if f.lower().endswith('.opus')])
-        track_count = len(self.workflow.state.get_tracks())
-        if got < track_count:
-            QMessageBox.warning(self, "不足", f"Opus が不足しています ({got}/{track_count})")
-            return
+        total = 0
+        for t in self.workflow.state.get_tracks():
+            if t.get("finalFile"): total += 1
+            if t.get("instrumentalFile"): total += 1
+        
+        if got < total:
+            # ファイル数不足: 確認ダイアログで警告
+            reply = QMessageBox.warning(
+                self,
+                "ファイル数不足",
+                f"Opusファイル数が不足しています。\n\n"
+                f"期待: {total}個\n"
+                f"実際: {got}個\n\n"
+                f"変換が完了しているか確認してください。\n"
+                f"このまま次のステップに進みますか?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
+            )
+            if reply != QMessageBox.Yes:
+                return
+        
         self.step_completed.emit()

@@ -11,6 +11,7 @@ from PySide6.QtCore import Signal, QThread
 from logic.config_manager import ConfigManager
 from logic.workflow_manager import WorkflowManager
 from logic.state_manager import StateManager
+from logic.log_manager import get_logger
 import shutil
 from send2trash import send2trash
 
@@ -380,14 +381,20 @@ class Step1ImportPanel(QWidget):
     
     def _on_single_import_finished(self, success, error_msg, dest_folder, album_name, artist_name):
         """単一アルバム取り込み完了"""
+        # ロガーを取得（アルバムフォルダ設定）
+        logger = get_logger()
+        if os.path.exists(dest_folder):
+            logger.set_album_folder(dest_folder)
+        
         if not success:
             self.failed_imports.append((album_name, error_msg))
+            logger.error("step1", f"取り込み失敗: {album_name} - {error_msg}")
             # 失敗した残骸を削除
             if os.path.exists(dest_folder):
                 try:
                     shutil.rmtree(dest_folder)
                 except Exception as cleanup_err:
-                    print(f"[WARN] 失敗した残骸の削除失敗: {cleanup_err}")
+                    logger.warning("step1", f"失敗した残骸の削除失敗: {cleanup_err}")
             self.current_import_index += 1
             self._import_next_album()
             return
@@ -395,12 +402,15 @@ class Step1ImportPanel(QWidget):
         # state.json を初期化
         if not self._initialize_album_state(dest_folder, album_name, artist_name):
             self.failed_imports.append((album_name, "state.json初期化失敗"))
+            logger.error("step1", f"state.json初期化失敗: {album_name}")
             # 初期化失敗時も残骸を削除
             if os.path.exists(dest_folder):
                 try:
                     shutil.rmtree(dest_folder)
                 except Exception as cleanup_err:
-                    print(f"[WARN] 初期化失敗後の残骸削除失敗: {cleanup_err}")
+                    logger.warning("step1", f"初期化失敗後の残骸削除失敗: {cleanup_err}")
+        else:
+            logger.info("step1", f"アルバム取り込み完了: {album_name} (アーティスト: {artist_name})")
         
         # 次へ
         self.current_import_index += 1
