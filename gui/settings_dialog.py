@@ -165,7 +165,6 @@ class SettingsDialog(QDialog):
         form = QFormLayout()
         
         tools = [
-            ("FastCopy", "FastCopy.exe"),
             ("Mp3Tag", "Mp3tag.exe"),
             ("MediaHuman", "MediaHuman Audio Converter.exe"),
             ("Foobar2000", "foobar2000.exe"),

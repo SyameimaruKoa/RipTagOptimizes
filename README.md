@@ -23,7 +23,7 @@
 - **Step 4**: AAC変換（MediaHuman Audio Converter連携）
 - **Step 5**: Opus変換（foobar2000連携）
 - **Step 6**: アートワーク最適化（ImageMagick連携）
-- **Step 7**: NAS転送（FastCopy/WinSCP連携・クリーンアップ）
+- **Step 7**: NAS転送（WinSCP連携・クリーンアップ）
 
 ### 便利な機能
 
@@ -39,11 +39,11 @@
 - **OS**: Windows 10/11
 - **Python**: 3.12以降
 - **外部ツール**（パスは設定GUIで指定可能）:
-  - FastCopy
   - Mp3tag
   - MediaHuman Audio Converter
   - foobar2000
   - WinSCP
+  - FreeFileSync
   - flac/metaflac
   - ImageMagick
   - demucs（Pythonパッケージ、オプション）

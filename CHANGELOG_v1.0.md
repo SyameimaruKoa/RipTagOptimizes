@@ -59,8 +59,9 @@ All notable changes to this project will be documented in this file.
 
 #### Cleanup & Transfer
 - send2trashによる安全な削除
-- FastCopyによる高速コピー
+- shutil.moveによるフォルダ移動
 - WinSCPによるSFTP転送対応
+- FreeFileSyncによるNAS同期対応
 - 中間ファイルの自動クリーンアップ
 
 #### Logging

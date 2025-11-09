@@ -41,7 +41,6 @@ class ConfigManager:
     def _create_default_config(self):
         """デフォルト設定ファイルを作成"""
         self.config['Paths'] = {
-            'FastCopy': '',
             'Mp3Tag': '',
             'MediaHuman': '',
             'Foobar2000': '',

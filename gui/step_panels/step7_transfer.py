@@ -218,7 +218,7 @@ class Step7TransferPanel(QWidget):
         if os.path.exists(final_flac):
             return  # 既に移動済み
         
-        # shutil.moveで移動（FastCopy不要）
+        # shutil.moveで移動
         try:
             import shutil
             shutil.move(flac_src, final_flac)
