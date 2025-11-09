@@ -2,6 +2,9 @@
 chcp 65001 > nul
 setlocal
 
+rem --- スクリプトのディレクトリに移動 ---
+cd /d "%~dp0"
+
 rem --- ヘルプ表示 ---
 if "%~1"=="-h" goto :HELP
 if "%~1"=="--help" goto :HELP

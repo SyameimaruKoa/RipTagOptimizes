@@ -1,153 +1,154 @@
-# CD取り込み自動化ワークフロー・マスターGUI
+# CD取り込み自動化ワークフロー GUI v1.0
 
-CD取り込みワークフローを管理・自動化するGUIアプリケーション
+音楽CDの取り込みから各種フォーマット変換、タグ付け、アートワーク処理、NAS転送までを一元管理するGUIアプリケーションです。
 
-## 機能概要
+## ⚠️ 重要な注意事項
 
-- **10ステップのワークフロー管理**: 取り込みからアーカイブまで
-- **状態管理**: 各アルバムの進捗を `state.json` で永続化
-- **外部ツール連携**: FastCopy, Mp3tag, MediaHuman, foobar2000, WinSCP 等
-- **Demucs自動検出**: インスト曲とそのペア原曲を自動判定
-- **アートワーク自動処理**: ImageMagick でリサイズ・変換
+**このアプリケーションは個人的な使用を目的として開発されたものです。**
 
-## セットアップ手順
+- 作者自身のワークフローに最適化されており、他の環境での動作は保証されません
+- 使用は自己責任でお願いします
+- データの損失や破損が発生する可能性があります
+- **必ず重要なデータはバックアップしてからご使用ください**
+- 外部ツールの動作や互換性については各ツールの公式ドキュメントを参照してください
 
-### 1. Python環境の準備
+## 主な機能
 
-Python 3.12 がインストールされていることを確認してください。
+### 8ステップのワークフロー管理
 
-```cmd
-python --version
+- **Step 0**: Music Center取り込みガイド（参考情報）
+- **Step 1**: 新規アルバム取り込み（フォルダ選択・state.json生成）
+- **Step 2**: Demucs処理（ボーカル分離・インスト版作成）
+- **Step 3**: タグ付け・リネーム（Mp3tag連携・ReplayGain自動適用）
+- **Step 4**: AAC変換（MediaHuman Audio Converter連携）
+- **Step 5**: Opus変換（foobar2000連携）
+- **Step 6**: アートワーク最適化（ImageMagick連携）
+- **Step 7**: NAS転送（FastCopy/WinSCP連携・クリーンアップ）
+
+### 便利な機能
+
+- **自動進捗管理**: 各アルバムの進行状況を`state.json`で自動保存
+- **ステップロールバック**: 前のステップに戻してやり直し可能
+- **作業破棄**: アルバムフォルダをゴミ箱へ安全に移動
+- **設定GUI**: config.iniの各種設定をGUIで編集可能
+- **ログビューア**: 処理履歴を確認可能
+- **自動スキップ**: インスト版楽曲のDemucs処理を自動除外
+
+## システム要件
+
+- **OS**: Windows 10/11
+- **Python**: 3.12以降
+- **外部ツール**（パスは設定GUIで指定可能）:
+  - FastCopy
+  - Mp3tag
+  - MediaHuman Audio Converter
+  - foobar2000
+  - WinSCP
+  - flac/metaflac
+  - ImageMagick
+  - demucs（Pythonパッケージ、オプション）
+
+## インストール
+
+### 1. リポジトリのクローン
+
+```bash
+git clone https://github.com/SyameimaruKoa/RipTagOptimize.git
+cd RipTagOptimize
 ```
 
-### 2. 仮想環境の作成
-
-プロジェクトルートで以下のコマンドを実行:
-
-```cmd
-python -m venv .venv
-```
-
-### 3. 仮想環境のアクティベート
-
-```cmd
-.venv\Scripts\activate
-```
-
-### 4. 依存ライブラリのインストール
-
-```cmd
-pip install -r requirements.txt
-```
-
-### 5. 設定ファイルの編集
-
-`config.ini` を開き、各ツールのパスと作業ディレクトリを確認・編集してください。
-
-```ini
-[Paths]
-FastCopy = C:\Users\kouki\FastCopy\FastCopy.exe
-Mp3Tag = C:\Program Files\Mp3tag\Mp3tag.exe
-...
-```
-
-### 6. 作業フォルダの作成
-
-`config.ini` で指定した `WorkDir` が存在しない場合、自動的に作成されます。
-
-## 起動方法
-
-### 方法1: バッチファイルから起動（推奨）
+### 2. 起動（初回自動セットアップ）
 
 ```cmd
 LAUNCH_GUI.bat
 ```
 
-バッチファイルは自動的に仮想環境をアクティベートし、GUIを起動します。
+初回実行時は自動で以下を実行します：
+- Python仮想環境（.venv）の作成
+- 必要なライブラリのインストール
 
-### 方法2: 直接起動
+## 使い方
 
-仮想環境をアクティベートした後:
+### 基本的なワークフロー
 
-```cmd
-python main.py
-```
+1. **LAUNCH_GUI.bat** を実行してGUIを起動
+2. **Step 1**で新規アルバムフォルダを選択
+3. 各ステップを順番に実行
+4. 外部ツールを起動して処理を実行
+5. 「完了」ボタンで次のステップへ進む
 
-## 使用方法
+### 設定
 
-### 新規取り込み (Step 1)
+ツールバーの「⚙️ 設定」から以下を設定できます：
 
-1. ツールバーの「新規取り込み」ボタンをクリック
-2. Music Center のアルバムフォルダを選択
-3. 「取り込み開始」をクリック
+- **ツールパス**: 各外部ツールの実行ファイルパス
+- **品質設定**: アートワークのJPEG/WebP品質、リサイズ幅
+- **Demucs設定**: 自動除外キーワード（動的追加・削除可能）
 
-### ワークフロー進行
+### ロールバック機能
 
-- 左ペインでアルバムを選択
-- 右ペインに現在のステップが表示される
-- 各ステップの指示に従って作業
-- 完了後「完了」ボタンで次のステップへ
+ステップを間違えた場合：
 
-### 各ステップの概要
+1. 対象アルバムを左のリストから選択
+2. ツールバーの「⏪ 前ステップへ」をクリック
+3. 前のステップに戻ります（完了フラグもクリア）
 
-1. **新規取り込み**: Music Center → work フォルダへ移動
-2. **Demucs処理**: 音源分離（インスト版作成）
-3. **FLAC完成**: Mp3tag でタグ付け・リネーム
-4. **AAC変換**: MediaHuman で AAC/M4A 作成
-5. **Opus変換**: foobar2000 で Opus 作成
-6. **アートワーク縮小**: 自動で JPG/WebP リサイズ
-7. **アートワーク交換**: 圧縮音源にアートワーク埋め込み
-8. **ReplayGain**: foobar2000 で音量正規化
-9. **最終配置**: WinSCP で NAS/クラウドへ転送
-10. **クリーンアップ**: 作業フォルダをゴミ箱へ
-
-## トラブルシューティング
-
-### ツールが見つからない
-
-`config.ini` でツールのパスが正しく設定されているか確認してください。
-
-### state.json が作成されない
-
-- work フォルダに書き込み権限があるか確認
-- FLAC ファイルが正しく取り込まれているか確認
-
-### アートワークが検出されない
-
-- Mp3tag でアートワークが正しく埋め込まれているか確認
-- FLAC ファイルに pictures タグが存在するか確認
+※ Step 2未満には戻せません
 
 ## ディレクトリ構造
 
 ```
-CD取り込み自動化v2/
-├─ LAUNCH_GUI.bat          # 起動用バッチファイル
-├─ main.py                 # エントリーポイント
-├─ config.ini              # 設定ファイル
-├─ requirements.txt        # 依存ライブラリ
-├─ README.md               # このファイル
-├─ .venv/                  # Python仮想環境
-├─ work/                   # 作業フォルダ（自動作成）
-├─ gui/                    # GUIコンポーネント
-│   ├─ main_window.py
-│   └─ step_panels/
-│       ├─ step1_import.py
-│       ├─ step2_demucs.py
-│       ├─ step3_tagging.py
-│       └─ step_generic.py
-└─ logic/                  # ビジネスロジック
-    ├─ config_manager.py
-    ├─ state_manager.py
-    ├─ workflow_manager.py
-    ├─ external_tools.py
-    ├─ demucs_detector.py
-    └─ artwork_handler.py
+work/
+  └─ [ArtistName] - [AlbumName]/  ← アルバムフォルダ
+       ├─ state.json              ← 進捗管理ファイル
+       ├─ 01 - Track.flac         ← 完成品FLAC
+       ├─ 02 - Track (Inst).flac  ← Demucs成果物
+       ├─ _flac_src/              ← (Step1) 生FLAC置き場
+       ├─ htdemucs_ft/            ← (Step2) Demucs出力
+       ├─ _aac_output/            ← (Step4) AAC出力先
+       ├─ _opus_output/           ← (Step5) Opus出力先
+       ├─ _artwork_resized/       ← (Step6) リサイズ画像
+       └─ _logs/                  ← 自動処理ログ
 ```
+
+## トラブルシューティング
+
+### GUIが起動しない
+
+- Python 3.12以降がインストールされているか確認
+- `.venv`フォルダを削除して`LAUNCH_GUI.bat`を再実行
+
+### 外部ツールが起動しない
+
+- 設定GUIで各ツールのパスが正しく設定されているか確認
+- ツールが実際にインストールされているか確認
+
+### ステップが進まない
+
+- 各ステップの「完了」ボタンを押しているか確認
+- ログビューア（📋 ログ表示）でエラーを確認
+
+## 開発情報
+
+- **Language**: Python 3.12
+- **GUI Framework**: PySide6 (Qt for Python)
+- **State Management**: JSON
+- **Version Control**: Git
 
 ## ライセンス
 
-個人利用のみ
+MIT License
 
-## 作成者
+## 免責事項
 
-kouki
+このソフトウェアは「現状のまま」提供され、明示または黙示を問わず、いかなる保証もありません。作者は、このソフトウェアの使用によって生じたいかなる損害についても責任を負いません。
+
+**本アプリケーションは作者個人の使用を目的として開発されたものであり、汎用性や互換性は保証されません。ご使用の際は必ず事前にバックアップを取り、自己責任でご利用ください。**
+
+## 作者
+
+YOUR_NAME
+
+## 更新履歴
+
+詳細は [CHANGELOG.md](CHANGELOG.md) を参照してください。

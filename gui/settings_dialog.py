@@ -25,6 +25,7 @@ class SettingsDialog(QDialog):
         
         # 設定値を保持する辞書
         self.path_edits = {}
+        self.dir_edits = {}  # ディレクトリ用
         self.quality_spins = {}
         self.keyword_list = None
         self.keyword_input = None
@@ -43,6 +44,10 @@ class SettingsDialog(QDialog):
         
         # タブウィジェット
         tabs = QTabWidget()
+        
+        # タブ0: ディレクトリ設定（最初のタブ）
+        tab_dirs = self.create_directories_tab()
+        tabs.addTab(tab_dirs, "📁 ディレクトリ")
         
         # タブ1: ツールパス
         tab_tools = self.create_tools_tab()
@@ -73,6 +78,74 @@ class SettingsDialog(QDialog):
         btn_layout.addWidget(btn_cancel)
         
         layout.addLayout(btn_layout)
+    
+    def create_directories_tab(self) -> QWidget:
+        """ディレクトリ設定タブを作成"""
+        widget = QWidget()
+        layout = QVBoxLayout()
+        widget.setLayout(layout)
+        
+        desc = QLabel(
+            "⚠️ 必須設定：ワークフロー実行に必要なディレクトリを設定してください。\n"
+            "これらが未設定の場合、アプリケーション起動時に設定を求められます。"
+        )
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color: #ff6b6b; font-weight: bold; margin-bottom: 10px; padding: 10px; background-color: #fff3cd; border-radius: 5px;")
+        layout.addWidget(desc)
+        
+        # ディレクトリ設定
+        form = QFormLayout()
+        
+        directories = [
+            ("WorkDir", "作業フォルダ", "アルバムデータを管理する作業ディレクトリ"),
+            ("MusicCenterDir", "Music Center フォルダ", "Music Center の取り込み先ディレクトリ"),
+            ("ExternalOutputDir", "外部ツール出力先", "MediaHuman/foobar2000 の初期出力先"),
+        ]
+        
+        for key, label, tooltip in directories:
+            row = QVBoxLayout()
+            
+            # ラベルと説明
+            label_widget = QLabel(f"<b>{label}</b>")
+            row.addWidget(label_widget)
+            
+            desc_widget = QLabel(tooltip)
+            desc_widget.setStyleSheet("color: gray; font-size: 10px;")
+            row.addWidget(desc_widget)
+            
+            # 入力欄と参照ボタン
+            input_row = QHBoxLayout()
+            
+            edit = QLineEdit()
+            edit.setPlaceholderText(f"例: C:\\Users\\YourName\\{key}")
+            self.dir_edits[key] = edit
+            input_row.addWidget(edit, 1)
+            
+            btn_browse = QPushButton("📁 参照")
+            btn_browse.setMaximumWidth(80)
+            btn_browse.clicked.connect(lambda checked, k=key: self.on_browse_directory(k))
+            input_row.addWidget(btn_browse)
+            
+            row.addLayout(input_row)
+            form.addRow(row)
+        
+        layout.addLayout(form)
+        layout.addStretch()
+        
+        return widget
+    
+    def on_browse_directory(self, key: str):
+        """ディレクトリ参照ボタン"""
+        current = self.dir_edits[key].text().strip()
+        start_dir = current if current and os.path.isdir(current) else ""
+        
+        path = QFileDialog.getExistingDirectory(
+            self,
+            f"{key} を選択",
+            start_dir
+        )
+        if path:
+            self.dir_edits[key].setText(path)
     
     def create_tools_tab(self) -> QWidget:
         """ツールパスタブを作成"""
@@ -272,6 +345,18 @@ class SettingsDialog(QDialog):
     
     def load_settings(self):
         """現在の設定を読み込む"""
+        # ディレクトリ設定
+        dir_sections = {
+            "WorkDir": "Paths",
+            "MusicCenterDir": "Paths",
+            "ExternalOutputDir": "Settings"
+        }
+        for key, edit in self.dir_edits.items():
+            section = dir_sections.get(key, "Paths")
+            value = self.config.config.get(section, key, fallback='')
+            if value:
+                edit.setText(value)
+        
         # ツールパス
         for key, edit in self.path_edits.items():
             path = self.config.get_tool_path(key)
@@ -303,6 +388,37 @@ class SettingsDialog(QDialog):
     def on_save(self):
         """設定を保存"""
         try:
+            # ディレクトリ設定（必須チェック）
+            required_dirs = ["WorkDir", "MusicCenterDir", "ExternalOutputDir"]
+            missing_dirs = []
+            
+            for key in required_dirs:
+                value = self.dir_edits[key].text().strip()
+                if not value:
+                    missing_dirs.append(key)
+            
+            if missing_dirs:
+                QMessageBox.warning(
+                    self,
+                    "必須項目が未入力",
+                    f"以下のディレクトリは必須です:\n\n" + "\n".join([f"- {d}" for d in missing_dirs])
+                )
+                return
+            
+            # ディレクトリ設定を保存
+            dir_sections = {
+                "WorkDir": "Paths",
+                "MusicCenterDir": "Paths",
+                "ExternalOutputDir": "Settings"
+            }
+            for key, edit in self.dir_edits.items():
+                path = edit.text().strip()
+                if path:
+                    section = dir_sections.get(key, "Paths")
+                    if section not in self.config.config:
+                        self.config.config[section] = {}
+                    self.config.config[section][key] = path
+            
             # ツールパス
             for key, edit in self.path_edits.items():
                 path = edit.text().strip()

@@ -1,5 +1,8 @@
 """
 メインウィンドウ
+
+⚠️ このアプリケーションは個人的な使用を目的として開発されました。
+   使用は自己責任でお願いします。
 """
 import os
 from PySide6.QtWidgets import (
@@ -103,11 +106,11 @@ class MainWindow(QMainWindow):
         
         toolbar.addSeparator()
         
-        # 一括処理ボタン
-        batch_action = QAction("🔄 一括処理", self)
-        batch_action.setToolTip("Step4~7を全アルバム一括処理します")
-        batch_action.triggered.connect(self.on_batch_process)
-        toolbar.addAction(batch_action)
+        # 一括処理ボタン（v1.0では無効化）
+        # batch_action = QAction("🔄 一括処理", self)
+        # batch_action.setToolTip("Step4~7を全アルバム一括処理します")
+        # batch_action.triggered.connect(self.on_batch_process)
+        # toolbar.addAction(batch_action)
         
         toolbar.addSeparator()
         
