@@ -158,3 +158,10 @@ class StateManager:
         """アートワークの有無を設定"""
         self.state["hasArtwork"] = has_artwork
         return self.save()
+    
+    def mark_step_completed(self, step_key: str) -> bool:
+        """ステップ完了フラグを設定"""
+        if "completedSteps" not in self.state:
+            self.state["completedSteps"] = {}
+        self.state["completedSteps"][step_key] = True
+        return self.save()

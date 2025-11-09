@@ -5,7 +5,8 @@ import os
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QFormLayout,
     QLabel, QPushButton, QLineEdit, QFileDialog,
-    QGroupBox, QSpinBox, QMessageBox, QTabWidget, QWidget
+    QGroupBox, QSpinBox, QMessageBox, QTabWidget, QWidget,
+    QListWidget, QListWidgetItem
 )
 from PySide6.QtCore import Qt
 
@@ -25,7 +26,8 @@ class SettingsDialog(QDialog):
         # 設定値を保持する辞書
         self.path_edits = {}
         self.quality_spins = {}
-        self.keyword_edit = None
+        self.keyword_list = None
+        self.keyword_input = None
         
         self.init_ui()
         self.load_settings()
@@ -174,22 +176,99 @@ class SettingsDialog(QDialog):
         
         desc = QLabel(
             "Demucs 処理で自動除外するキーワードを設定します。\n"
-            "カンマ区切りで複数指定可能です（例: instrumental, inst, off vocal）"
+            "ファイル名にこれらのキーワードが含まれる場合、Demucs処理がスキップされます。"
         )
         desc.setWordWrap(True)
         desc.setStyleSheet("color: gray; margin-bottom: 10px;")
         layout.addWidget(desc)
         
-        form = QFormLayout()
+        # 入力エリア
+        input_layout = QHBoxLayout()
+        input_label = QLabel("キーワード追加:")
+        input_layout.addWidget(input_label)
         
-        self.keyword_edit = QLineEdit()
-        self.keyword_edit.setPlaceholderText("例: instrumental, inst, off vocal, カラオケ")
-        form.addRow("除外キーワード:", self.keyword_edit)
+        self.keyword_input = QLineEdit()
+        self.keyword_input.setPlaceholderText("例: instrumental, inst, off vocal")
+        self.keyword_input.returnPressed.connect(self.on_add_keyword)
+        input_layout.addWidget(self.keyword_input, 1)
         
-        layout.addLayout(form)
-        layout.addStretch()
+        btn_add = QPushButton("➕ 追加")
+        btn_add.setMinimumWidth(80)
+        btn_add.clicked.connect(self.on_add_keyword)
+        input_layout.addWidget(btn_add)
+        
+        layout.addLayout(input_layout)
+        
+        # リストウィジェット
+        list_label = QLabel("登録済みキーワード:")
+        layout.addWidget(list_label)
+        
+        self.keyword_list = QListWidget()
+        self.keyword_list.setMinimumHeight(250)
+        self.keyword_list.setSelectionMode(QListWidget.MultiSelection)
+        layout.addWidget(self.keyword_list)
+        
+        # 削除ボタン
+        btn_layout = QHBoxLayout()
+        btn_layout.addStretch()
+        
+        btn_remove = QPushButton("🗑️ 選択項目を削除")
+        btn_remove.clicked.connect(self.on_remove_keywords)
+        btn_layout.addWidget(btn_remove)
+        
+        btn_clear = QPushButton("🧹 すべてクリア")
+        btn_clear.clicked.connect(self.on_clear_keywords)
+        btn_layout.addWidget(btn_clear)
+        
+        layout.addLayout(btn_layout)
         
         return widget
+    
+    def on_add_keyword(self):
+        """キーワードを追加"""
+        text = self.keyword_input.text().strip()
+        if not text:
+            return
+        
+        # カンマ区切りで複数追加可能
+        keywords = [kw.strip() for kw in text.split(',') if kw.strip()]
+        
+        # 重複チェック
+        existing_keywords = [self.keyword_list.item(i).text() 
+                           for i in range(self.keyword_list.count())]
+        
+        for keyword in keywords:
+            if keyword.lower() not in [k.lower() for k in existing_keywords]:
+                self.keyword_list.addItem(keyword)
+        
+        # 入力欄をクリア
+        self.keyword_input.clear()
+    
+    def on_remove_keywords(self):
+        """選択されたキーワードを削除"""
+        selected_items = self.keyword_list.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "削除", "削除するキーワードを選択してください。")
+            return
+        
+        for item in selected_items:
+            self.keyword_list.takeItem(self.keyword_list.row(item))
+    
+    def on_clear_keywords(self):
+        """すべてのキーワードをクリア"""
+        if self.keyword_list.count() == 0:
+            return
+        
+        reply = QMessageBox.question(
+            self,
+            "すべてクリア",
+            "すべてのキーワードを削除しますか？",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply == QMessageBox.Yes:
+            self.keyword_list.clear()
     
     def load_settings(self):
         """現在の設定を読み込む"""
@@ -207,7 +286,8 @@ class SettingsDialog(QDialog):
         # Demucs キーワード
         keywords = self.config.get_demucs_keywords()
         if keywords:
-            self.keyword_edit.setText(", ".join(keywords))
+            for keyword in keywords:
+                self.keyword_list.addItem(keyword)
     
     def on_browse_tool(self, key: str):
         """ツール参照ボタン"""
@@ -245,9 +325,15 @@ class SettingsDialog(QDialog):
             if 'Demucs' not in self.config.config:
                 self.config.config['Demucs'] = {}
             
-            keywords = self.keyword_edit.text().strip()
+            # リストから全キーワードを取得してカンマ区切りで保存
+            keywords = []
+            for i in range(self.keyword_list.count()):
+                keyword = self.keyword_list.item(i).text().strip()
+                if keyword:
+                    keywords.append(keyword)
+            
             if keywords:
-                self.config.config['Demucs']['SkipKeywords'] = keywords
+                self.config.config['Demucs']['SkipKeywords'] = ', '.join(keywords)
             else:
                 if 'SkipKeywords' in self.config.config['Demucs']:
                     del self.config.config['Demucs']['SkipKeywords']

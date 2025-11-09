@@ -110,6 +110,12 @@ class MainWindow(QMainWindow):
         toolbar.addAction(batch_action)
         
         toolbar.addSeparator()
+        
+        # ロールバックボタン
+        rollback_action = QAction("⏪ 前ステップへ", self)
+        rollback_action.setToolTip("選択中のアルバムを前のステップに戻します")
+        rollback_action.triggered.connect(self.on_rollback_step)
+        toolbar.addAction(rollback_action)
 
         # 作業破棄（ゴミ箱へ移動）
         discard_action = QAction("作業破棄", self)
@@ -415,6 +421,110 @@ class MainWindow(QMainWindow):
             # 完了後、アルバムリストを再スキャン
             self.refresh_album_list()
             self.status_bar.showMessage(f"一括処理完了", 5000)
+    
+    def on_rollback_step(self):
+        """選択中アルバムを前のステップに戻す"""
+        # 対象取得
+        target_folder = None
+        selected = self.album_list.currentItem()
+        if selected:
+            target_folder = selected.data(Qt.UserRole)
+        if not target_folder:
+            # 現在表示中のアルバムフォルダを利用
+            target_folder = self.current_album_folder
+        
+        if not target_folder or not os.path.isdir(target_folder):
+            QMessageBox.warning(self, "ロールバック", "ロールバックするアルバムを左のリストから選択してください。")
+            return
+        
+        # ワークフローを読み込み
+        temp_workflow = WorkflowManager(self.config)
+        if not temp_workflow.load_album(target_folder):
+            QMessageBox.critical(self, "エラー", "アルバムの読み込みに失敗しました。")
+            return
+        
+        current_step = temp_workflow.get_current_step()
+        album_name = temp_workflow.state.get_album_name()
+        
+        # 戻す先のステップを計算
+        prev_step = current_step - 1
+        
+        # Step 2未満（Step0,1）に戻すことはできない（作業アルバムが存在しない段階）
+        if prev_step < 2:
+            QMessageBox.warning(self, "ロールバック", "Step 2（Demucs処理）より前には戻せません。\n（Step0,1はアルバム作成前の段階です）")
+            return
+        
+        # 確認ダイアログ
+        current_step_name = temp_workflow.STEP_NAMES.get(current_step, f"Step {current_step}")
+        prev_step_name = temp_workflow.STEP_NAMES.get(prev_step, f"Step {prev_step}")
+        
+        reply = QMessageBox.question(
+            self,
+            "ステップロールバック",
+            f"アルバム: {album_name}\n\n"
+            f"現在: {current_step_name}\n"
+            f"戻す先: {prev_step_name}\n\n"
+            f"前のステップに戻しますか?\n"
+            f"(ステップ完了フラグはクリアされます)",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No
+        )
+        
+        if reply != QMessageBox.Yes:
+            return
+        
+        # ロールバック実行
+        try:
+            # 現在のステップの完了フラグをクリア
+            step_key = f"step{current_step}_completed"
+            if step_key in temp_workflow.state.state.get("completedSteps", {}):
+                del temp_workflow.state.state["completedSteps"][step_key]
+            
+            # ステップを戻す
+            temp_workflow.state.set_current_step(prev_step)
+            temp_workflow.state.save()
+            
+            # UIを更新
+            self.refresh_album_list()
+            
+            # ロールバックしたアルバムを選択して表示
+            if target_folder == self.current_album_folder:
+                # 現在表示中のアルバムの場合、再読み込み
+                print(f"[DEBUG] Rollback: Reloading current album, step={prev_step}")
+                
+                # 一時的に現在のアルバムをクリアしてon_album_selectedの干渉を防ぐ
+                self.current_album_folder = None
+                
+                # 先にパネルを切り替え
+                panel_index = prev_step
+                print(f"[DEBUG] Rollback: Setting panel index to {panel_index}")
+                self.step_stack.setCurrentIndex(panel_index)
+                
+                # ワークフローを再読み込み
+                self.workflow.load_album(target_folder)
+                self.current_album_folder = target_folder
+                
+                # パネルを更新
+                current_panel = self.step_stack.currentWidget()
+                print(f"[DEBUG] Rollback: Current panel after switch = {current_panel}")
+                if hasattr(current_panel, 'load_album'):
+                    print(f"[DEBUG] Rollback: Calling load_album on panel")
+                    current_panel.load_album(target_folder)
+                
+                step_name = temp_workflow.STEP_NAMES.get(prev_step, f"Step {prev_step}")
+                self.status_bar.showMessage(f"{album_name} - {step_name}")
+                print(f"[DEBUG] Rollback: Updated status bar")
+            
+            QMessageBox.information(
+                self,
+                "完了",
+                f"ステップを戻しました。\n\n"
+                f"{album_name}\n"
+                f"{prev_step_name} に戻りました。"
+            )
+            
+        except Exception as e:
+            QMessageBox.critical(self, "エラー", f"ロールバックに失敗しました:\n{e}")
 
     def on_discard_album(self):
         """選択中アルバムの作業フォルダをゴミ箱へ移動（作業破棄）"""

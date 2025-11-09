@@ -1,0 +1,49 @@
+{
+    // Python設定
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+    "python.terminal.activateEnvironment": true,
+    "python.analysis.typeCheckingMode": "off",
+    "python.analysis.autoImportCompletions": true,
+    "python.analysis.diagnosticMode": "workspace",
+    "python.analysis.diagnosticSeverityOverrides": {
+        "reportUnknownVariableType": "none",
+        "reportUnknownMemberType": "none",
+        "reportUnknownParameterType": "none",
+        "reportUnknownArgumentType": "none",
+        "reportGeneralTypeIssues": "none",
+        "reportOptionalMemberAccess": "none",
+        "reportOptionalSubscript": "none",
+        "reportMissingImports": "none",
+        "reportMissingModuleSource": "none",
+        "reportAttributeAccessIssue": "none",
+        "reportArgumentType": "none",
+        "reportAssignmentType": "none",
+        "reportCallIssue": "none",
+        "reportIncompatibleMethodOverride": "none",
+        "reportIncompatibleVariableOverride": "none",
+        "reportInconsistentConstructor": "none",
+        "reportIndexIssue": "none",
+        "reportOperatorIssue": "none",
+        "reportReturnType": "none"
+    },
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}",
+        "${workspaceFolder}/.venv/Lib/site-packages"
+    ],
+    "python.languageServer": "Pylance",
+    // ファイル除外設定
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.pyc": true,
+        "**/.pytest_cache": true
+    },
+    // HTMLファイルの検証を無効化（ドキュメントファイルのため）
+    "html.validate.styles": false,
+    "html.validate.scripts": false,
+    // Markdown検証の緩和
+    "markdownlint.config": {
+        "MD022": false,
+        "MD032": false,
+        "MD040": false
+    }
+}
