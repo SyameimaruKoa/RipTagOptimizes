@@ -15,7 +15,7 @@ from logic.config_manager import ConfigManager
 from logic.workflow_manager import WorkflowManager
 from logic.state_manager import StateManager
 
-# ステップパネルのインポート（後で実装）
+# ステップパネルのインポート(後で実装)
 from gui.step_panels.step1_import import Step1ImportPanel
 from gui.step_panels.step2_demucs import Step2DemucsPanel
 from gui.step_panels.step3_tagging import Step3TaggingPanel
@@ -23,6 +23,7 @@ from gui.step_panels.step_generic import GenericStepPanel
 from gui.step_panels.step4_aac import Step4AacPanel
 from gui.step_panels.step5_opus import Step5OpusPanel
 from gui.step_panels.step6_artwork import Step6ArtworkPanel
+from gui.step_panels.step7_transfer import Step7TransferPanel
 
 
 class MainWindow(QMainWindow):
@@ -141,11 +142,10 @@ class MainWindow(QMainWindow):
         self.step6_artwork_panel.step_completed.connect(self.on_step_completed)
         self.step_stack.addWidget(self.step6_artwork_panel)
 
-        # Step 7-10: 汎用パネル
-        for step_num in range(7, 11):
-            panel = GenericStepPanel(self.config, self.workflow, step_num)
-            panel.step_completed.connect(self.on_step_completed)
-            self.step_stack.addWidget(panel)
+        # Step 7: 最終転送
+        self.step7_transfer_panel = Step7TransferPanel(self.config, self.workflow)
+        self.step7_transfer_panel.step_completed.connect(self.on_step_completed)
+        self.step_stack.addWidget(self.step7_transfer_panel)
     
     def refresh_album_list(self):
         """アルバムリストを更新"""

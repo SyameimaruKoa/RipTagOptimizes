@@ -17,10 +17,7 @@ class WorkflowManager:
         4: "AAC変換 (MediaHuman)",
         5: "Opus変換 (foobar2000)",
         6: "アートワーク最適化 & タグ手直し",
-        7: "アートワーク交換",
-        8: "ReplayGain & アーカイブ",
-        9: "最終配置 (転送)",
-        10: "クリーンアップ"
+        7: "最終転送"
     }
     
     def __init__(self, config: ConfigManager):
@@ -63,14 +60,8 @@ class WorkflowManager:
         # ステップスキップロジック
         next_step = current + 1
         
-        # Step 7: 交換ステップはアートワークが無ければスキップ
-        if next_step == 7:
-            if not self.state.has_artwork():
-                print("[INFO] アートワーク未生成のため Step7(交換) をスキップ")
-                next_step = 8
-        
-        # 最大ステップチェック
-        if next_step > 10:
+        # 最大ステップチェック（Step 7で完了）
+        if next_step > 7:
             self.state.set_status("COMPLETED")
             return True
         
@@ -153,23 +144,6 @@ class WorkflowManager:
             
             if not os.path.exists(jpg_path) or not os.path.exists(webp_path):
                 return False, "リサイズされたアートワークが見つかりません"
-            
-            return True, ""
-        
-        elif current_step == 8:
-            # Step8: _final_flac フォルダに十分なファイルがあるか
-            final_dir = os.path.join(
-                self.current_album_folder,
-                self.state.get_path("finalFlac")
-            )
-            if not os.path.exists(final_dir):
-                return False, "最終FLAC出力フォルダが見つかりません"
-            
-            flac_count = len([f for f in os.listdir(final_dir) if f.lower().endswith('.flac')])
-            track_count = len(self.state.get_tracks())
-            
-            if flac_count < track_count:
-                return False, f"最終FLACファイル数が不足しています ({flac_count}/{track_count})"
             
             return True, ""
         
