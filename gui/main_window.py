@@ -316,27 +316,48 @@ class MainWindow(QMainWindow):
     def on_step_completed(self):
         """ステップ完了時の処理"""
         if not self.workflow.state:
+            print("[DEBUG] on_step_completed: workflow.state が None")
             return
+        
+        current_step = self.workflow.get_current_step()
+        print(f"[DEBUG] on_step_completed: 現在のステップ = {current_step}")
         
         # 次のステップに進む
         if self.workflow.advance_step():
-            # アルバムリストとパネルを更新
-            self.refresh_album_list()
+            new_step = self.workflow.get_current_step()
+            print(f"[DEBUG] on_step_completed: 次のステップに進みました = {new_step}")
             
             if self.current_album_folder:
-                self.workflow.load_album(self.current_album_folder)
+                # ワークフローを再読み込み
+                if not self.workflow.load_album(self.current_album_folder):
+                    print(f"[ERROR] on_step_completed: アルバム再読み込み失敗")
+                    return
+                
                 step = self.workflow.get_current_step()
-                self.step_stack.setCurrentIndex(step - 1)
+                panel_index = step
+                print(f"[DEBUG] on_step_completed: step = {step}, パネルインデックス = {panel_index}")
+                
+                # パネルを切り替え
+                self.step_stack.setCurrentIndex(panel_index)
+                print(f"[DEBUG] on_step_completed: パネルを切り替えました (index={panel_index})")
                 
                 # パネルを更新
                 current_panel = self.step_stack.currentWidget()
+                print(f"[DEBUG] on_step_completed: 現在のパネル = {current_panel}")
                 if hasattr(current_panel, 'load_album'):
+                    print(f"[DEBUG] on_step_completed: パネルのload_album()を呼び出し")
                     current_panel.load_album(self.current_album_folder)
                 
                 # ステータスバーを更新
                 step_name = self.workflow.get_current_step_name()
                 album_name = self.workflow.state.get_album_name()
                 self.status_bar.showMessage(f"{album_name} - {step_name}")
+                print(f"[DEBUG] Updated status bar: {album_name} - {step_name}")
+            
+            # 最後にアルバムリストを更新（選択変更イベントを抑止）
+            self.refresh_album_list()
+        else:
+            print(f"[WARNING] on_step_completed: advance_step() が False を返しました")
     
     def on_settings(self):
         """設定ボタンが押されたときの処理"""

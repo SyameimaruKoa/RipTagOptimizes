@@ -45,7 +45,11 @@ class BatchProcessWorker(QThread):
             self.progress.emit(idx, len(self.album_folders), f"処理中: {album_name}")
             
             # ワークフローマネージャーを作成
-            workflow = WorkflowManager(self.config, album_folder)
+            workflow = WorkflowManager(self.config)
+            if not workflow.load_album(album_folder):
+                self.album_completed.emit(album_name, False, "アルバム読み込み失敗")
+                fail_count += 1
+                continue
             
             # ログ設定
             logger = get_logger()

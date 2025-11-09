@@ -53,19 +53,32 @@ class WorkflowManager:
     def advance_step(self) -> bool:
         """次のステップに進む"""
         if not self.state:
+            print("[ERROR] advance_step: state が None です")
             return False
         
         current = self.state.get_current_step()
+        print(f"[DEBUG] advance_step: 現在のステップ = {current}")
         
         # ステップスキップロジック
         next_step = current + 1
+        print(f"[DEBUG] advance_step: 次のステップ = {next_step}")
         
         # 最大ステップチェック（Step 7で完了）
         if next_step > 7:
+            print(f"[DEBUG] advance_step: Step 7 完了、COMPLETED 状態へ")
             self.state.set_status("COMPLETED")
+            self.state.save()  # 明示的に保存
             return True
         
-        return self.state.set_current_step(next_step)
+        # ステップを進めて保存
+        result = self.state.set_current_step(next_step)
+        if result:
+            self.state.save()  # 明示的に保存
+            print(f"[DEBUG] advance_step: Step {next_step} に進みました（保存完了）")
+        else:
+            print(f"[ERROR] advance_step: set_current_step が失敗しました")
+        
+        return result
     
     def can_advance_to_next_step(self) -> tuple[bool, str]:
         """

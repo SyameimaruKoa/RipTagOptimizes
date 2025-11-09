@@ -227,7 +227,12 @@ class Step4AacPanel(QWidget):
             if reply != QMessageBox.Yes:
                 return
         
+        # ステップ完了フラグを設定
+        self.workflow.state.mark_step_completed("step4_aac")
+        print("[DEBUG] Step4: ステップ完了フラグを設定しました")
+        
         self.step_completed.emit()
+        print("[DEBUG] Step4: step_completed シグナルを発行しました")
 
     # ------------------------
     # helpers

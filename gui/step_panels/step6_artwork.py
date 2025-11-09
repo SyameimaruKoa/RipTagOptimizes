@@ -290,7 +290,12 @@ class Step6ArtworkPanel(QWidget):
                 QMessageBox.Yes
             )
             if reply == QMessageBox.Yes:
+                # スキップ時もステップ完了フラグを設定
+                if self.workflow.state:
+                    self.workflow.state.mark_step_completed("step6_artwork")
+                    print("[DEBUG] Step6: アートワークなしでスキップ、ステップ完了フラグを設定しました")
                 self.step_completed.emit()
+                print("[DEBUG] Step6: step_completed シグナルを発行しました（スキップ）")
             return
         
         jpg = os.path.join(self.album_folder, "_artwork_resized", "cover.jpg")
@@ -298,9 +303,15 @@ class Step6ArtworkPanel(QWidget):
         if not (os.path.exists(jpg) and os.path.exists(webp)):
             QMessageBox.warning(self, "不足", "cover.jpg / cover.webp を生成後に完了してください。")
             return
+        
+        # ステップ完了フラグを設定
         if self.workflow.state:
             self.workflow.state.set_artwork(True)
+            self.workflow.state.mark_step_completed("step6_artwork")
+            print("[DEBUG] Step6: ステップ完了フラグを設定しました")
+        
         self.step_completed.emit()
+        print("[DEBUG] Step6: step_completed シグナルを発行しました")
     
     def _show_no_artwork_message(self):
         """アートワークなしの案内を表示"""

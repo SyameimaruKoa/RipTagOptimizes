@@ -415,10 +415,17 @@ class Step7TransferPanel(QWidget):
         )
         
         if reply == QMessageBox.Yes:
+            # ステップ完了フラグを設定
+            if self.workflow.state:
+                self.workflow.state.mark_step_completed("step7_transfer")
+                print("[DEBUG] Step7: ステップ完了フラグを設定しました")
+            
             # 作業フォルダを削除
             self._delete_work_folder()
+            
             # Step完了シグナルを発行
             self.step_completed.emit()
+            print("[DEBUG] Step7: step_completed シグナルを発行しました")
     
     def _delete_work_folder(self):
         """作業フォルダを削除（内部処理）- send2trash でゴミ箱へ"""

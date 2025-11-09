@@ -58,6 +58,12 @@ class Step3TaggingPanel(QWidget):
         self.rescan_button = QPushButton("ファイル再スキャン（紐づけを更新）")
         self.rescan_button.clicked.connect(self.on_rescan)
         layout.addWidget(self.rescan_button)
+        
+        # 手動紐づけボタン
+        self.manual_mapping_button = QPushButton("手動紐づけ")
+        self.manual_mapping_button.setToolTip("自動紐づけが失敗した場合に手動で設定します")
+        self.manual_mapping_button.clicked.connect(self.on_manual_mapping)
+        layout.addWidget(self.manual_mapping_button)
 
         layout.addSpacing(10)
         
@@ -393,6 +399,18 @@ class Step3TaggingPanel(QWidget):
 
     def on_rescan(self):
         """Mp3tagを使わずに紐づけを再構築"""
+        # Demucsスキップ時は再紐づけを無効化
+        if self.workflow.state and self.workflow.state.get_flag("step2_skipped"):
+            QMessageBox.warning(
+                self,
+                "再紐づけ不可",
+                "Demucs処理をスキップした場合、自動再紐づけは使用できません。\n\n"
+                "インストゥルメンタル版が作成されていないため、\n"
+                "ファイル紐づけが不安定になる可能性があります。\n\n"
+                "手動紐づけボタンを使用してください。"
+            )
+            return
+        
         self.update_file_mapping()
         self.check_artwork()
         self._force_show_mapping = True
@@ -479,3 +497,46 @@ class Step3TaggingPanel(QWidget):
             print(f"[INFO] foobar2000 で ReplayGain 測定を開始しました（{len(flac_files)} ファイル）")
         except Exception as e:
             print(f"[WARN] ReplayGain 測定起動に失敗（非致命）: {e}")
+    
+    def on_manual_mapping(self):
+        """手動紐づけダイアログを表示"""
+        if not self.workflow.state or not self.album_folder:
+            QMessageBox.warning(self, "エラー", "アルバムが読み込まれていません。")
+            return
+        
+        from gui.manual_mapping_dialog import ManualMappingDialog
+        
+        # 現在のトラック情報を取得
+        tracks = self.workflow.state.get_tracks()
+        
+        # _flac_src ディレクトリから実際のファイル一覧を取得
+        try:
+            raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
+        except Exception:
+            raw_dirname = "_flac_src"
+        flac_src_dir = os.path.join(self.album_folder, raw_dirname)
+        
+        if not os.path.isdir(flac_src_dir):
+            QMessageBox.warning(self, "エラー", f"{raw_dirname} フォルダが見つかりません。")
+            return
+        
+        actual_files = sorted([f for f in os.listdir(flac_src_dir) if f.lower().endswith('.flac')])
+        
+        if not actual_files:
+            QMessageBox.warning(self, "エラー", "FLACファイルが見つかりません。")
+            return
+        
+        # ダイアログを表示
+        dialog = ManualMappingDialog(tracks, actual_files, self)
+        if dialog.exec():
+            # 更新されたトラック情報を保存
+            updated_tracks = dialog.get_updated_tracks()
+            self.workflow.state.state["tracks"] = updated_tracks
+            self.workflow.state.save()
+            
+            # UIを更新
+            self.update_file_mapping()
+            self._force_show_mapping = True
+            self.mapping_widget.setVisible(True)
+            
+            QMessageBox.information(self, "完了", "ファイル紐づけを手動で更新しました。")

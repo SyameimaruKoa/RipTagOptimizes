@@ -242,4 +242,9 @@ class Step5OpusPanel(QWidget):
             if reply != QMessageBox.Yes:
                 return
         
+        # ステップ完了フラグを設定
+        self.workflow.state.mark_step_completed("step5_opus")
+        print("[DEBUG] Step5: ステップ完了フラグを設定しました")
+        
         self.step_completed.emit()
+        print("[DEBUG] Step5: step_completed シグナルを発行しました")
