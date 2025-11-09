@@ -16,6 +16,7 @@ from logic.workflow_manager import WorkflowManager
 from logic.state_manager import StateManager
 
 # ステップパネルのインポート(後で実装)
+from gui.step_panels.step0_music_center import Step0MusicCenterPanel
 from gui.step_panels.step1_import import Step1ImportPanel
 from gui.step_panels.step2_demucs import Step2DemucsPanel
 from gui.step_panels.step3_tagging import Step3TaggingPanel
@@ -83,6 +84,11 @@ class MainWindow(QMainWindow):
         toolbar = QToolBar()
         self.addToolBar(toolbar)
         
+        # Music Center取り込みガイド
+        music_center_action = QAction("Music Center取り込み", self)
+        music_center_action.triggered.connect(self.on_show_music_center_guide)
+        toolbar.addAction(music_center_action)
+        
         # 新規取り込みボタン
         new_import_action = QAction("新規取り込み", self)
         new_import_action.triggered.connect(self.on_new_import)
@@ -112,6 +118,10 @@ class MainWindow(QMainWindow):
     
     def init_step_panels(self):
         """各ステップのパネルを初期化"""
+        # Step 0: Music Center取り込みガイド
+        self.step0_panel = Step0MusicCenterPanel(self.config, self.workflow)
+        self.step_stack.addWidget(self.step0_panel)
+        
         # Step 1: 新規取り込み
         self.step1_panel = Step1ImportPanel(self.config, self.workflow)
         self.step1_panel.import_completed.connect(self.on_import_completed)
@@ -221,7 +231,7 @@ class MainWindow(QMainWindow):
             # 現在のステップに応じたパネルを表示
             step = self.workflow.get_current_step()
             print(f"[DEBUG] Current step: {step}")
-            self.step_stack.setCurrentIndex(step - 1)  # ステップ1 = index 0
+            self.step_stack.setCurrentIndex(step)  # ステップ0 = index 0, ステップ1 = index 1...
             
             # パネルを更新
             current_panel = self.step_stack.currentWidget()
@@ -238,11 +248,18 @@ class MainWindow(QMainWindow):
         else:
             print("[DEBUG] Failed to load album")
     
+    def on_show_music_center_guide(self):
+        """Music Center取り込みガイドを表示"""
+        self.step_stack.setCurrentWidget(self.step0_panel)
+        self.album_list.clearSelection()
+        self.current_album_folder = None
+        self.status_bar.showMessage("Music Center でCDを取り込む")
+    
     def on_new_import(self):
         """新規取り込みボタンが押されたときの処理"""
         # Step1パネルをリセットして表示
         self.step1_panel.reset()
-        self.step_stack.setCurrentIndex(0)
+        self.step_stack.setCurrentIndex(1)  # Step1 = index 1 (Step0がindex 0)
         self.album_list.clearSelection()
         self.status_bar.showMessage("新規取り込みを開始してください")
     

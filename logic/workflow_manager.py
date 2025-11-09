@@ -11,6 +11,7 @@ class WorkflowManager:
     """ワークフローの進行を管理するクラス"""
     
     STEP_NAMES = {
+        0: "Music Center取り込み",
         1: "新規取り込み",
         2: "Demucs処理",
         3: "FLAC完成 (タグ・リネーム)",
@@ -165,4 +166,6 @@ class WorkflowManager:
         elif status == "COMPLETED":
             status_icon = "✓ "
         
-        return f"{status_icon}[Step {step}/10] {album_name}"
+        # STEP_NAMESの最大値を使用（動的に取得）
+        max_step = max(self.STEP_NAMES.keys())
+        return f"{status_icon}[Step {step}/{max_step}] {album_name}"

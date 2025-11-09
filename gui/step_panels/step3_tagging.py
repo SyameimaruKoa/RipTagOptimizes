@@ -124,18 +124,9 @@ class Step3TaggingPanel(QWidget):
         """アルバムをロード"""
         self.album_folder = album_folder
         
-        # Step 3 開始時は常にフォルダ内の全ファイルをスキャンして紐づけを更新
-        # (Demucs で作成された Inst ファイルを検出するため)
-        self.update_file_mapping()
-        
-        # ユーザーが明示的に表示を開始した後は、完了が押されるまで消さない
-        if self._force_show_mapping:
-            self.mapping_widget.setVisible(True)
-            self.complete_button.setEnabled(True)
-        else:
-            # 紐づけ結果があれば表示
-            self.mapping_widget.setVisible(True)
-            self.complete_button.setEnabled(True)
+        # 紐づけUIは非表示のまま（Mp3tag完了時のみ表示）
+        self.mapping_widget.setVisible(False)
+        self.complete_button.setEnabled(True)
     
     def on_launch_mp3tag(self):
         """Mp3tag を起動"""
