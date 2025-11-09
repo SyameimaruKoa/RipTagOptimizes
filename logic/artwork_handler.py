@@ -146,15 +146,30 @@ def resize_artwork_with_magick(
 def find_first_flac_with_artwork(album_folder: str) -> Optional[str]:
     """
     アルバム内で最初にアートワークを持つ FLAC のパスを返す
+    _flac_src サブフォルダを優先して探索
     """
     if not os.path.isdir(album_folder):
         return None
-    for name in sorted(os.listdir(album_folder)):
-        if not name.lower().endswith(".flac"):
+    
+    # 優先: _flac_src サブフォルダ
+    flac_src = os.path.join(album_folder, "_flac_src")
+    search_dirs = []
+    if os.path.isdir(flac_src):
+        search_dirs.append(flac_src)
+    search_dirs.append(album_folder)
+    
+    for search_dir in search_dirs:
+        try:
+            for name in sorted(os.listdir(search_dir)):
+                if not name.lower().endswith(".flac"):
+                    continue
+                path = os.path.join(search_dir, name)
+                if check_flac_has_artwork(path):
+                    return path
+        except Exception as e:
+            print(f"[WARN] find_first_flac_with_artwork: {search_dir} の探索失敗: {e}")
             continue
-        path = os.path.join(album_folder, name)
-        if check_flac_has_artwork(path):
-            return path
+    
     return None
 
 

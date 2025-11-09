@@ -240,7 +240,8 @@ class MainWindow(QMainWindow):
     
     def on_new_import(self):
         """新規取り込みボタンが押されたときの処理"""
-        # Step1パネルを表示
+        # Step1パネルをリセットして表示
+        self.step1_panel.reset()
         self.step_stack.setCurrentIndex(0)
         self.album_list.clearSelection()
         self.status_bar.showMessage("新規取り込みを開始してください")

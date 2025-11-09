@@ -35,45 +35,70 @@ class Step5OpusPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("<h2>Step 5: Opus変換 (foobar2000)</h2>"))
         desc = QLabel(
-            "1. アルバムフォルダを foobar2000 にドラッグして Opus へ変換してください。\n"
-            "2. 変換後 [Opus出力取り込み] で .opus を _opus_output に集約。\n"
-            "3. 曲数が揃ったら [Step 5 完了]。"
+            "1. foobar2000 を起動（入力パスは自動コピー済み）\n"
+            "2. foobar2000 でファイルを追加して Opus 変換を実行\n"
+            "3. 変換完了後 foobar2000 を閉じると自動で取り込みダイアログ表示"
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
 
-        layout.addWidget(QLabel("<b>入力フォルダ（foobar2000に追加）:</b>"))
-        self.album_label = QLabel("未選択")
-        layout.addWidget(self.album_label)
+        layout.addSpacing(10)
 
-        # foobar2000 起動/状態
-        launch_row = QHBoxLayout()
-        self.btn_launch = QPushButton("foobar2000 を起動")
+        # メインアクション: 起動と完了（大きく目立たせる）
+        main_btns = QHBoxLayout()
+        self.btn_launch = QPushButton("▶ foobar2000 を起動")
+        self.btn_launch.setMinimumHeight(40)
+        self.btn_launch.setStyleSheet("font-size: 14px; font-weight: bold;")
         self.btn_launch.clicked.connect(self.on_launch_foobar)
-        launch_row.addWidget(self.btn_launch)
-        self.foobar_status = QLabel("未起動")
-        launch_row.addWidget(self.foobar_status)
-        launch_row.addStretch()
-        layout.addLayout(launch_row)
+        main_btns.addWidget(self.btn_launch)
 
-        layout.addWidget(QLabel("<b>取り込みログ:</b>"))
+        self.btn_complete = QPushButton("✓ Step 5 完了")
+        self.btn_complete.setMinimumHeight(40)
+        self.btn_complete.setStyleSheet("font-size: 14px; font-weight: bold;")
+        self.btn_complete.clicked.connect(self.on_complete)
+        main_btns.addWidget(self.btn_complete)
+        layout.addLayout(main_btns)
+
+        layout.addSpacing(6)
+
+        # 状態表示
+        status_row = QHBoxLayout()
+        status_row.addWidget(QLabel("起動状態:"))
+        self.foobar_status = QLabel("未起動")
+        status_row.addWidget(self.foobar_status)
+        status_row.addStretch()
+        layout.addLayout(status_row)
+
+        layout.addSpacing(10)
+
+        # 詳細表示（折りたたみ可能なログ）
+        layout.addWidget(QLabel("<b>取り込みログ（参考）:</b>"))
         self.log_list = QListWidget()
+        self.log_list.setMaximumHeight(150)
         layout.addWidget(self.log_list)
 
-        btn_row = QHBoxLayout()
-        self.btn_copy_path = QPushButton("アルバムパスをコピー")
+        # 入力フォルダ表示（ログの後に移動して視覚的に下方へ）
+        layout.addWidget(QLabel("<b>入力フォルダ:</b>"))
+        self.album_label = QLabel("未選択")
+        self.album_label.setStyleSheet("color: gray;")
+        layout.addWidget(self.album_label)
+
+        # 補助ボタン（小型化）
+        helper_btns = QHBoxLayout()
+        self.btn_copy_path = QPushButton("📋 パスをコピー")
+        self.btn_copy_path.setMaximumWidth(120)
         self.btn_copy_path.clicked.connect(self.on_copy_path)
-        btn_row.addWidget(self.btn_copy_path)
+        helper_btns.addWidget(self.btn_copy_path)
 
-        self.btn_ingest = QPushButton("Opus出力取り込み")
+        self.btn_ingest = QPushButton("📥 手動取り込み")
+        self.btn_ingest.setMaximumWidth(120)
+        self.btn_ingest.setToolTip("foobar2000終了後は自動取り込みされますが、手動で取り込む場合はこちら")
         self.btn_ingest.clicked.connect(self.on_ingest)
-        btn_row.addWidget(self.btn_ingest)
+        helper_btns.addWidget(self.btn_ingest)
 
-        self.btn_complete = QPushButton("Step 5 完了")
-        self.btn_complete.clicked.connect(self.on_complete)
-        btn_row.addWidget(self.btn_complete)
-        btn_row.addStretch()
-        layout.addLayout(btn_row)
+        helper_btns.addStretch()
+        layout.addLayout(helper_btns)
+
         layout.addStretch()
 
     def load_album(self, album_folder: str):
@@ -99,7 +124,8 @@ class Step5OpusPanel(QWidget):
         if not self.input_folder:
             return
         QGuiApplication.clipboard().setText(self.input_folder)
-        QMessageBox.information(self, "コピー", "アルバムフォルダパスをクリップボードへコピーしました。")
+        # ポップアップ廃止: ログへ通知
+        self.log_list.addItem(QListWidgetItem(f"[コピー完了] {self.input_folder}"))
 
     def on_launch_foobar(self):
         import subprocess

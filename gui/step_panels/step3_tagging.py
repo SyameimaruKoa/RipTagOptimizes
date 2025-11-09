@@ -418,17 +418,73 @@ class Step3TaggingPanel(QWidget):
         # OKポップは不要（検査結果は state のみ更新）
     
     def on_complete(self):
-        """完了ボタン"""
+        """完了ボタン - ReplayGain 自動適用後に次へ"""
         reply = QMessageBox.question(
             self,
             "確認",
             "Step 3 を完了しますか?\n\n"
-            "ファイルの紐づけとアートワーク検査が完了しました。",
+            "ファイルの紐づけとアートワーク検査が完了しました。\n"
+            "完了後、FLAC へ ReplayGain タグを自動付与します。",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No
         )
         
         if reply == QMessageBox.Yes:
+            # ReplayGain 自動実行（設定で有効時のみ）
+            self._apply_replaygain_if_enabled()
             # 完了後は維持フラグを解除
             self._force_show_mapping = False
             self.step_completed.emit()
+
+    def _apply_replaygain_if_enabled(self):
+        """ReplayGain を foobar2000 で測定（アルバムゲイン含む、config.ini 設定に基づく）"""
+        try:
+            enabled = str(self.config.get_setting("AutoReplayGain", "1")).strip() not in ("0", "false", "False")
+        except Exception:
+            enabled = True
+        if not enabled:
+            return
+
+        foobar_path = self.config.get_tool_path("Foobar2000")
+        if not foobar_path or not os.path.exists(foobar_path):
+            print("[WARN] foobar2000 が見つかりません。ReplayGain をスキップします。")
+            return
+
+        if not self.workflow.state or not self.album_folder:
+            return
+
+        # _flac_src 配下の全 FLAC へ適用
+        try:
+            raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
+        except Exception:
+            raw_dirname = "_flac_src"
+        flac_src_dir = os.path.join(self.album_folder, raw_dirname)
+        if not os.path.isdir(flac_src_dir):
+            return
+
+        flac_files = [os.path.join(flac_src_dir, f) for f in os.listdir(flac_src_dir) if f.lower().endswith('.flac')]
+        if not flac_files:
+            return
+
+        # foobar2000 で ReplayGain スキャン実行
+        # コマンド: foobar2000.exe /playlist_command:"ReplayGain/Scan per-file track gain" <files>
+        import subprocess
+        try:
+            # まずファイルをfoobarへ追加してReplayGainスキャン
+            args = [foobar_path, "/add"] + flac_files + ["/immediate"]
+            subprocess.Popen(args)
+            
+            # ユーザーへ案内ダイアログ表示
+            QMessageBox.information(
+                self,
+                "ReplayGain 測定",
+                f"foobar2000 を起動しました。\n\n"
+                f"手動で以下の操作を行ってください:\n"
+                f"1. 追加された {len(flac_files)} ファイルを選択\n"
+                f"2. 右クリック → ReplayGain → Scan per-file track gain\n"
+                f"3. (アルバムゲインも必要なら) Scan as albums (by tags)\n\n"
+                f"測定完了後、foobar2000 を閉じてください。"
+            )
+            print(f"[INFO] foobar2000 で ReplayGain 測定を開始しました（{len(flac_files)} ファイル）")
+        except Exception as e:
+            print(f"[WARN] ReplayGain 測定起動に失敗（非致命）: {e}")

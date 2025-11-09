@@ -36,47 +36,58 @@ class Step4AacPanel(QWidget):
     def init_ui(self):
         layout = QVBoxLayout(self)
 
-        title = QLabel("<h2>Step 4: AAC変換 (MediaHuman 連携)</h2>")
+        title = QLabel("<h2>Step 4: AAC変換 (MediaHuman)</h2>")
         layout.addWidget(title)
 
         desc = QLabel(
-            "MediaHuman GUI に追加する『入力フォルダのフルパス』を下に一覧表示します。\n"
-            "MediaHuman 側で変換実行後、[出力を取り込む] を押すと .m4a を _aac_output へ集約します。"
+            "1. MediaHuman を起動（入力パスは自動コピー済み）\n"
+            "2. MediaHuman でフォルダを追加して AAC 変換を実行\n"
+            "3. 変換完了後 MediaHuman を閉じると自動で取り込みダイアログ表示"
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
 
-        layout.addSpacing(6)
+        layout.addSpacing(10)
 
-        layout.addWidget(QLabel("<b>MediaHuman に追加するフォルダ:</b>"))
+        # メインアクション: 起動と完了（大きく目立たせる）
+        main_btns = QHBoxLayout()
+        self.btn_launch = QPushButton("▶ MediaHuman を起動")
+        self.btn_launch.setMinimumHeight(40)
+        self.btn_launch.setStyleSheet("font-size: 14px; font-weight: bold;")
+        self.btn_launch.clicked.connect(self.on_launch_mediahuman)
+        main_btns.addWidget(self.btn_launch)
+
+        self.btn_complete = QPushButton("✓ Step 4 完了")
+        self.btn_complete.setMinimumHeight(40)
+        self.btn_complete.setStyleSheet("font-size: 14px; font-weight: bold;")
+        self.btn_complete.clicked.connect(self.on_complete)
+        main_btns.addWidget(self.btn_complete)
+        layout.addLayout(main_btns)
+
+        layout.addSpacing(10)
+
+        # 詳細表示（折りたたみ可能なリスト）
+        layout.addWidget(QLabel("<b>入力フォルダ（参考）:</b>"))
         self.folder_list = QListWidget()
+        self.folder_list.setMaximumHeight(150)
         layout.addWidget(self.folder_list)
 
-        btns = QHBoxLayout()
-        self.btn_copy = QPushButton("リストをクリップボードへコピー")
+        # 補助ボタン（小型化）
+        helper_btns = QHBoxLayout()
+        self.btn_copy = QPushButton("📋 パスをコピー")
+        self.btn_copy.setMaximumWidth(120)
         self.btn_copy.clicked.connect(self.on_copy_to_clipboard)
-        btns.addWidget(self.btn_copy)
+        helper_btns.addWidget(self.btn_copy)
 
-        self.btn_launch = QPushButton("MediaHuman を起動")
-        self.btn_launch.clicked.connect(self.on_launch_mediahuman)
-        btns.addWidget(self.btn_launch)
-
-        btns.addStretch()
-        layout.addLayout(btns)
-
-        layout.addSpacing(6)
-
-        layout.addWidget(QLabel("<b>変換結果の取り込み:</b>"))
-        action = QHBoxLayout()
-        self.btn_ingest = QPushButton("出力を取り込む（.m4a を _aac_output へ）")
+        self.btn_ingest = QPushButton("📥 手動取り込み")
+        self.btn_ingest.setMaximumWidth(120)
+        self.btn_ingest.setToolTip("MediaHuman終了後は自動取り込みされますが、手動で取り込む場合はこちら")
         self.btn_ingest.clicked.connect(self.on_ingest_outputs)
-        action.addWidget(self.btn_ingest)
+        helper_btns.addWidget(self.btn_ingest)
 
-        self.btn_complete = QPushButton("Step 4 完了")
-        self.btn_complete.clicked.connect(self.on_complete)
-        action.addWidget(self.btn_complete)
-        action.addStretch()
-        layout.addLayout(action)
+        helper_btns.addStretch()
+        layout.addLayout(helper_btns)
+
         layout.addStretch()
 
     def load_album(self, album_folder: str):
@@ -114,13 +125,14 @@ class Step4AacPanel(QWidget):
             self.folder_list.addItem(QListWidgetItem(f"  - {f}"))
 
     def on_copy_to_clipboard(self):
-        # クリップボードへフォルダパスをコピー
+        # クリップボードへフォルダパスをコピー（モーダル削減: サイレント動作）
         from PySide6.QtGui import QGuiApplication
         if not self.album_folder:
             return
         target = self.input_folder or self.album_folder
         QGuiApplication.clipboard().setText(target)
-        QMessageBox.information(self, "コピー", "入力フォルダのフルパスをコピーしました。\nMediaHuman に貼り付けてください。")
+        # ポップアップ廃止: リストに通知を追加
+        self.folder_list.addItem(QListWidgetItem(f"[コピー完了] {target}"))
 
     def on_launch_mediahuman(self):
         # 起動時に自動で入力パスをコピー

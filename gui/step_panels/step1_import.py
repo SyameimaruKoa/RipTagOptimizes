@@ -95,6 +95,12 @@ class Step1ImportPanel(QWidget):
         # Step1は新規取り込み用なので、既存アルバムを読み込む必要はない
         pass
     
+    def reset(self):
+        """パネルの状態をリセット（新規取り込み開始時）"""
+        self.selected_source = None
+        self.selected_folder_label.setText("選択: (なし)")
+        self.import_button.setEnabled(False)
+    
     def on_select_folder(self):
         """フォルダ選択ボタンが押されたときの処理"""
         music_center_dir = self.config.get_directory("MusicCenterDir")

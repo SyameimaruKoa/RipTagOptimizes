@@ -34,72 +34,94 @@ class Step6ArtworkPanel(QWidget):
         layout = QVBoxLayout(self)
 
         # タイトルと説明
-        layout.addWidget(QLabel("<h2>Step 6: アートワーク最適化 & Mp3tag 手直し</h2>"))
+        layout.addWidget(QLabel("<h2>Step 6: アートワーク最適化</h2>"))
         desc = QLabel(
-            "FLAC からアートワーク抽出、または画像選択→最適化（cover.jpg/webp）。\n"
-            "任意で AAC にカバー埋め込み後 Mp3tag を開いて最終手直し。"
+            "1. FLAC からアートワーク抽出 → 最適化実行\n"
+            "2. 必要に応じて Mp3tag でタグ調整\n"
+            "※ AAC/Opus への埋め込みは不要（既にFLACから引き継がれています）"
         )
         desc.setWordWrap(True)
         layout.addWidget(desc)
 
-        # 1) ソース取得
-        layout.addWidget(QLabel("<b>1) アートワーク元の取得</b>"))
-        row1 = QHBoxLayout()
-        self.btn_from_flac = QPushButton("FLAC から抽出")
+        layout.addSpacing(10)
+
+        # ステップ1: ソース取得と最適化
+        layout.addWidget(QLabel("<b>① ソース画像取得 & 最適化:</b>"))
+        step1_btns = QHBoxLayout()
+        
+        self.btn_from_flac = QPushButton("📁 FLAC から抽出")
+        self.btn_from_flac.setMinimumHeight(35)
+        self.btn_from_flac.setStyleSheet("font-size: 13px; font-weight: bold;")
         self.btn_from_flac.clicked.connect(self.on_extract_from_flac)
-        row1.addWidget(self.btn_from_flac)
+        step1_btns.addWidget(self.btn_from_flac)
 
-        self.btn_pick_image = QPushButton("画像ファイルを選択…")
+        self.btn_pick_image = QPushButton("🖼️ 画像を選択")
+        self.btn_pick_image.setMinimumHeight(35)
+        self.btn_pick_image.setStyleSheet("font-size: 13px;")
         self.btn_pick_image.clicked.connect(self.on_pick_image)
-        row1.addWidget(self.btn_pick_image)
+        step1_btns.addWidget(self.btn_pick_image)
 
-        self.lbl_source = QLabel("（未選択）")
-        row1.addWidget(self.lbl_source)
-        row1.addStretch()
-        layout.addLayout(row1)
-
-        # 2) 最適化
-        layout.addWidget(QLabel("<b>2) 最適化（cover.jpg / cover.webp 生成）</b>"))
-        row2 = QHBoxLayout()
-        self.btn_optimize = QPushButton("最適化を実行")
+        self.btn_optimize = QPushButton("🎨 最適化実行")
+        self.btn_optimize.setMinimumHeight(35)
+        self.btn_optimize.setStyleSheet("font-size: 13px; font-weight: bold; background-color: #4CAF50; color: white;")
         self.btn_optimize.clicked.connect(self.on_optimize)
-        row2.addWidget(self.btn_optimize)
+        step1_btns.addWidget(self.btn_optimize)
 
+        layout.addLayout(step1_btns)
+
+        # ステータス表示
+        status_layout = QVBoxLayout()
+        status_row1 = QHBoxLayout()
+        status_row1.addWidget(QLabel("ソース:"))
+        self.lbl_source = QLabel("（未選択）")
+        self.lbl_source.setStyleSheet("color: gray;")
+        status_row1.addWidget(self.lbl_source)
+        status_row1.addStretch()
+        status_layout.addLayout(status_row1)
+
+        status_row2 = QHBoxLayout()
+        status_row2.addWidget(QLabel("結果:"))
         self.lbl_result = QLabel("")
-        row2.addWidget(self.lbl_result)
-        row2.addStretch()
-        layout.addLayout(row2)
+        self.lbl_result.setStyleSheet("color: gray;")
+        status_row2.addWidget(self.lbl_result)
+        status_row2.addStretch()
+        status_layout.addLayout(status_row2)
+        layout.addLayout(status_layout)
 
-        # 3) AAC 埋め込み（任意）
-        layout.addWidget(QLabel("<b>3) （任意）AAC にカバー埋め込み</b>"))
-        row3 = QHBoxLayout()
-        self.btn_embed_aac = QPushButton("AAC(.m4a) に埋め込み")
-        self.btn_embed_aac.clicked.connect(self.on_embed_aac)
-        row3.addWidget(self.btn_embed_aac)
-        row3.addStretch()
-        layout.addLayout(row3)
+        layout.addSpacing(10)
 
-        # 4) Mp3tag
-        layout.addWidget(QLabel("<b>4) Mp3tag を開く（手直し）</b>"))
-        row4 = QHBoxLayout()
-        self.btn_open_mp3tag_album = QPushButton("Mp3tag（アルバムルート）")
+        # ステップ2: Mp3tag（任意）
+        layout.addWidget(QLabel("<b>② タグ調整（任意）:</b>"))
+        step3_btns = QHBoxLayout()
+        
+        self.btn_open_mp3tag_album = QPushButton("�️ Mp3tag（ルート）")
+        self.btn_open_mp3tag_album.setMaximumWidth(160)
         self.btn_open_mp3tag_album.clicked.connect(self.on_open_mp3tag_album)
-        row4.addWidget(self.btn_open_mp3tag_album)
+        step3_btns.addWidget(self.btn_open_mp3tag_album)
 
-        self.btn_open_mp3tag_aac = QPushButton("Mp3tag（_aac_output）")
+        self.btn_open_mp3tag_aac = QPushButton("🏷️ Mp3tag（AAC）")
+        self.btn_open_mp3tag_aac.setMaximumWidth(160)
         self.btn_open_mp3tag_aac.clicked.connect(self.on_open_mp3tag_aac)
-        row4.addWidget(self.btn_open_mp3tag_aac)
-        row4.addStretch()
-        layout.addLayout(row4)
+        step3_btns.addWidget(self.btn_open_mp3tag_aac)
 
-        # 5) 完了
-        layout.addWidget(QLabel("<b>5) 完了</b>"))
-        row5 = QHBoxLayout()
-        self.btn_complete = QPushButton("Step 6 完了")
+        self.btn_open_mp3tag_opus = QPushButton("🏷️ Mp3tag（Opus）")
+        self.btn_open_mp3tag_opus.setMaximumWidth(160)
+        self.btn_open_mp3tag_opus.clicked.connect(self.on_open_mp3tag_opus)
+        step3_btns.addWidget(self.btn_open_mp3tag_opus)
+
+        step3_btns.addStretch()
+        layout.addLayout(step3_btns)
+
+        layout.addSpacing(10)
+
+        # 完了ボタン
+        complete_btn_layout = QHBoxLayout()
+        self.btn_complete = QPushButton("✓ Step 6 完了")
+        self.btn_complete.setMinimumHeight(40)
+        self.btn_complete.setStyleSheet("font-size: 14px; font-weight: bold;")
         self.btn_complete.clicked.connect(self.on_complete)
-        row5.addWidget(self.btn_complete)
-        row5.addStretch()
-        layout.addLayout(row5)
+        complete_btn_layout.addWidget(self.btn_complete)
+        layout.addLayout(complete_btn_layout)
 
         layout.addStretch()
 
@@ -162,6 +184,12 @@ class Step6ArtworkPanel(QWidget):
         p = os.path.join(self.album_folder, "_artwork_resized", "cover.jpg")
         return p if os.path.exists(p) else None
 
+    def _cover_webp(self) -> Optional[str]:
+        if not self.album_folder:
+            return None
+        p = os.path.join(self.album_folder, "_artwork_resized", "cover.webp")
+        return p if os.path.exists(p) else None
+
     def on_embed_aac(self):
         if not self.album_folder or not self.workflow.state:
             return
@@ -186,6 +214,32 @@ class Step6ArtworkPanel(QWidget):
                 print(f"[WARN] AAC embed failed: {name}: {err}")
         QMessageBox.information(self, "AAC 埋め込み", f"成功: {ok_cnt} / 失敗: {err_cnt}")
 
+    def on_embed_opus(self):
+        """Opus ファイルにカバー画像を埋め込む（WebP形式を優先使用）"""
+        if not self.album_folder or not self.workflow.state:
+            return
+        # Opus には WebP を優先的に埋め込む（ファイルサイズ削減）
+        img = self._cover_webp()
+        if not img:
+            QMessageBox.warning(self, "未生成", "cover.webp を生成してください。")
+            return
+        opus_dir = os.path.join(self.album_folder, self.workflow.state.get_path("opusOutput"))
+        if not os.path.isdir(opus_dir):
+            QMessageBox.warning(self, "未取り込み", "_opus_output が見つかりません。先に Step5 を完了してください。")
+            return
+        ok_cnt = 0
+        err_cnt = 0
+        for name in os.listdir(opus_dir):
+            if not name.lower().endswith('.opus'):
+                continue
+            path = os.path.join(opus_dir, name)
+            ok, err = ah.embed_artwork_to_opus(path, img)
+            if ok: ok_cnt += 1
+            else:
+                err_cnt += 1
+                print(f"[WARN] Opus embed failed: {name}: {err}")
+        QMessageBox.information(self, "Opus 埋め込み", f"WebP埋め込み 成功: {ok_cnt} / 失敗: {err_cnt}")
+
     def _launch_mp3tag(self, target_dir: str):
         exe = self.config.get_tool_path("Mp3Tag")
         if not exe:
@@ -207,6 +261,15 @@ class Step6ArtworkPanel(QWidget):
             QMessageBox.warning(self, "未取り込み", "_aac_output がありません。Step4 で取り込み後に実行してください。")
             return
         self._launch_mp3tag(aac_dir)
+
+    def on_open_mp3tag_opus(self):
+        """Opus 出力フォルダで Mp3tag を開く"""
+        if not self.album_folder or not self.workflow.state: return
+        opus_dir = os.path.join(self.album_folder, self.workflow.state.get_path("opusOutput"))
+        if not os.path.isdir(opus_dir):
+            QMessageBox.warning(self, "未取り込み", "_opus_output がありません。Step5 で取り込み後に実行してください。")
+            return
+        self._launch_mp3tag(opus_dir)
 
     def on_complete(self):
         if not self.album_folder:
