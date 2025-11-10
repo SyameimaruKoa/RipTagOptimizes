@@ -162,21 +162,78 @@ class Step5OpusPanel(QWidget):
             QMessageBox.critical(self, "起動失敗", str(e))
 
     def on_ingest(self, init_dir: Optional[str] = None):
+        """Opus出力を取り込み、_opus_output/アルバム名/ に集約する。
+        ファイル名を finalFile/instrumentalFile に基づいてリネーム（拡張子を .opus に変更）
+        """
         if not self.album_folder or not self.workflow.state:
             return
         start_dir = init_dir or self.album_folder
         src = QFileDialog.getExistingDirectory(self, "Opus出力フォルダを選択", start_dir)
         if not src:
             return
+        
+        # アルバム名を取得してサニタイズ
+        album_name = self.workflow.state.get_album_name()
+        album_name = self._sanitize_foldername(album_name)
+        
+        # 出力先: _opus_output/アルバム名/
         dst_name = self.workflow.state.get_path("opusOutput")
-        dst = os.path.join(self.album_folder, dst_name)
+        dst_base = os.path.join(self.album_folder, dst_name)
+        dst = os.path.join(dst_base, album_name)
         os.makedirs(dst, exist_ok=True)
+        
+        # トラック情報から期待されるファイル名マッピングを作成
+        tracks = self.workflow.state.get_tracks()
+        expected_files = {}  # {元のトラック番号: 最終ファイル名}
+        
+        import re
+        for track in tracks:
+            final_file = track.get("finalFile", "")
+            inst_file = track.get("instrumentalFile", "")
+            
+            # トラック番号を抽出
+            if final_file:
+                m = re.match(r"^(?:Disc \d+-)?(\d{2,3})", final_file)
+                if m:
+                    track_num = m.group(1)
+                    # 拡張子を .opus に変更
+                    base_name = os.path.splitext(final_file)[0]
+                    expected_files[track_num] = base_name + ".opus"
+            
+            if inst_file:
+                m = re.match(r"^(?:Disc \d+-)?(\d{2,3})", inst_file)
+                if m:
+                    track_num = m.group(1)
+                    base_name = os.path.splitext(inst_file)[0]
+                    # Instの場合は別のキーで保存（番号+Inst識別子）
+                    expected_files[track_num + "_inst"] = base_name + ".opus"
+        
         import shutil
         count = 0
         for name in os.listdir(src):
             if name.lower().endswith('.opus'):
                 src_file = os.path.join(src, name)
-                dst_file = os.path.join(dst, name)
+                
+                # 元のファイル名からトラック番号を抽出してマッピング
+                m = re.match(r"^(\d{2,3})", name)
+                if m:
+                    track_num = m.group(1)
+                    # Instかどうかを判定
+                    is_inst = "(inst)" in name.lower() or "instrumental" in name.lower()
+                    
+                    # 期待されるファイル名を取得
+                    key = track_num + "_inst" if is_inst else track_num
+                    expected_name = expected_files.get(key)
+                    
+                    if expected_name:
+                        dst_file = os.path.join(dst, expected_name)
+                    else:
+                        # マッピングが見つからない場合は元の名前を使用
+                        dst_file = os.path.join(dst, name)
+                else:
+                    # トラック番号が抽出できない場合は元の名前を使用
+                    dst_file = os.path.join(dst, name)
+                
                 try:
                     if os.path.exists(dst_file):
                         os.remove(dst_file)
@@ -184,7 +241,24 @@ class Step5OpusPanel(QWidget):
                     count += 1
                 except Exception as e:
                     self.log_list.addItem(QListWidgetItem(f"ERROR move {name}: {e}"))
-        self.log_list.addItem(QListWidgetItem(f"取り込み (移動) 完了: {count} ファイル"))
+        self.log_list.addItem(QListWidgetItem(f"取り込み (移動) 完了: {count} ファイル → {dst}"))
+    
+    def _sanitize_foldername(self, name: str) -> str:
+        """フォルダ名に使用できない文字を全角等に置換"""
+        replacements = {
+            '\\': '¥',
+            '/': '／',
+            ':': '：',
+            '*': '＊',
+            '?': '？',
+            '"': '"',
+            '<': '＜',
+            '>': '＞',
+            '|': '｜'
+        }
+        for char, replacement in replacements.items():
+            name = name.replace(char, replacement)
+        return name
 
     def _check_foobar_status(self):
         # 当パネルから起動した foobar2000 の終了検出
@@ -216,8 +290,13 @@ class Step5OpusPanel(QWidget):
     def on_complete(self):
         if not self.album_folder or not self.workflow.state:
             return
+        
+        # アルバム名サブフォルダを含めたパス
+        album_name = self._sanitize_foldername(self.workflow.state.get_album_name())
         dst_name = self.workflow.state.get_path("opusOutput")
-        dst = os.path.join(self.album_folder, dst_name)
+        dst_base = os.path.join(self.album_folder, dst_name)
+        dst = os.path.join(dst_base, album_name)
+        
         got = 0
         if os.path.isdir(dst):
             got = len([f for f in os.listdir(dst) if f.lower().endswith('.opus')])

@@ -303,22 +303,93 @@ class GenericStepPanel(QWidget):
         )
     
     def copy_to_final_flac(self):
-        """_final_flac フォルダにコピー (Step 8)"""
-        if not self.album_folder:
+        """_final_flac フォルダにコピー (Step 8)
+        アルバム名のサブフォルダを作成し、finalFileの名前でコピー
+        """
+        if not self.album_folder or not self.workflow.state:
             return
         
-        final_dir = os.path.join(self.album_folder, "_final_flac")
+        # アルバム名を取得してサニタイズ
+        album_name = self.workflow.state.get_album_name()
+        album_name = self._sanitize_foldername(album_name)
+        
+        # 出力先: _final_flac/アルバム名/
+        final_base = os.path.join(self.album_folder, "_final_flac")
+        final_dir = os.path.join(final_base, album_name)
         os.makedirs(final_dir, exist_ok=True)
         
-        # 全FLACをコピー
+        # _flac_src を優先的に探索
+        source_dir = self.album_folder
+        raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
+        candidate = os.path.join(self.album_folder, raw_dirname)
+        if os.path.isdir(candidate):
+            source_dir = candidate
+        
+        # トラック情報を取得してコピー
+        tracks = self.workflow.state.get_tracks()
         success_count = 0
+        
         try:
-            for file in os.listdir(self.album_folder):
-                if file.lower().endswith('.flac'):
-                    src = os.path.join(self.album_folder, file)
-                    dst = os.path.join(final_dir, file)
-                    shutil.copy2(src, dst)
-                    success_count += 1
+            for track in tracks:
+                # 元のファイル名（実際のファイル名はMp3tag後に変更されている可能性）
+                original_file = track.get("originalFile", "")
+                final_file = track.get("finalFile", "")
+                
+                if not final_file:
+                    continue
+                
+                # 実際のソースファイルを探す（originalFile と同じトラック番号のファイルを探す）
+                import re
+                m_orig = re.match(r"^(\d{1,3})", original_file)
+                track_num = m_orig.group(1) if m_orig else None
+                
+                # source_dir 内で該当するファイルを探す
+                src_file = None
+                for file in os.listdir(source_dir):
+                    if not file.lower().endswith('.flac'):
+                        continue
+                    m_file = re.match(r"^(\d{1,3})", file)
+                    if m_file and m_file.group(1) == track_num:
+                        src_file = file
+                        break
+                
+                if not src_file:
+                    # フォールバック: originalFile をそのまま使う
+                    src_file = original_file
+                
+                src = os.path.join(source_dir, src_file)
+                if not os.path.exists(src):
+                    # さらにフォールバック: アルバムルート直下を確認
+                    src = os.path.join(self.album_folder, src_file)
+                    if not os.path.exists(src):
+                        print(f"[WARN] ソースファイルが見つかりません: {src_file}")
+                        continue
+                
+                dst = os.path.join(final_dir, final_file)
+                shutil.copy2(src, dst)
+                success_count += 1
+                
+                # インストゥルメンタル版もコピー
+                inst_file = track.get("instrumentalFile", "")
+                if inst_file:
+                    # インストファイルの元ファイルを探す
+                    inst_src_file = None
+                    for file in os.listdir(source_dir):
+                        if not file.lower().endswith('.flac'):
+                            continue
+                        if "(inst)" in file.lower() or "instrumental" in file.lower():
+                            m_file = re.match(r"^(\d{1,3})", file)
+                            if m_file and track_num and m_file.group(1) == track_num:
+                                inst_src_file = file
+                                break
+                    
+                    if inst_src_file:
+                        inst_src = os.path.join(source_dir, inst_src_file)
+                        if os.path.exists(inst_src):
+                            inst_dst = os.path.join(final_dir, inst_file)
+                            shutil.copy2(inst_src, inst_dst)
+                            success_count += 1
+        
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"ファイルコピー失敗:\n{e}")
             return
@@ -326,8 +397,25 @@ class GenericStepPanel(QWidget):
         QMessageBox.information(
             self,
             "完了",
-            f"{success_count} 個のFLACファイルを '_final_flac' にコピーしました。"
+            f"{success_count} 個のFLACファイルを '_final_flac/{album_name}/' にコピーしました。"
         )
+    
+    def _sanitize_foldername(self, name: str) -> str:
+        """フォルダ名に使用できない文字を全角等に置換"""
+        replacements = {
+            '\\': '¥',
+            '/': '／',
+            ':': '：',
+            '*': '＊',
+            '?': '？',
+            '"': '"',
+            '<': '＜',
+            '>': '＞',
+            '|': '｜'
+        }
+        for char, replacement in replacements.items():
+            name = name.replace(char, replacement)
+        return name
     
     def cleanup_folder(self):
         """作業フォルダをクリーンアップ (Step 10)"""

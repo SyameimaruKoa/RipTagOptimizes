@@ -310,31 +310,36 @@ class Step3TaggingPanel(QWidget):
                 self._append_mapping_row(f"{original_file}  →  (未検出)")
                 continue
 
-            # 同タイトルのInstパートナーを探す（番号が異なっても検出）
+            # 同タイトルのInstパートナーを探す(番号が異なっても検出)
             inst_partner = by_title_inst.get(orig_norm)
 
+            # FLACファイルからタグ情報を読み取り、最終ファイル名を生成
+            final_filename = self._generate_final_filename(new_file)
+            
             # 通常ケース: new_file を最終成果物とし、Instが別にあれば派生として表示
-            track["finalFile"] = new_file
+            track["finalFile"] = final_filename
             track["isInstrumental"] = self._is_instrumental_by_name(new_file.lower())
             if inst_partner and inst_partner != new_file:
-                track["instrumentalFile"] = inst_partner
+                # インストゥルメンタル版のファイル名も生成
+                inst_final_filename = self._generate_final_filename(inst_partner)
+                track["instrumentalFile"] = inst_final_filename
                 track["hasInstrumental"] = True
                 # 表示: 原曲(or最終) → 最終 | (+Inst生成: inst)
                 self._append_mapping_row(
-                    f"{original_file}  →  {new_file}",
-                    f"(+Inst生成: {inst_partner})",
+                    f"{original_file}  →  {final_filename}",
+                    f"(+Inst生成: {inst_final_filename})",
                     "このトラックからインストゥルメンタル版を派生生成しました"
                 )
             else:
                 # new_file 自体が Inst の場合はバッジ表示、それ以外は通常表示
                 if track["isInstrumental"]:
                     self._append_mapping_row(
-                        f"{original_file}  →  {new_file}",
+                        f"{original_file}  →  {final_filename}",
                         "[Inst]",
                         "Instrumental（インストゥルメンタル）"
                     )
                 else:
-                    self._append_mapping_row(f"{original_file}  →  {new_file}")
+                    self._append_mapping_row(f"{original_file}  →  {final_filename}")
         
         # state.json に保存
         self.workflow.state.state["tracks"] = tracks
@@ -396,6 +401,82 @@ class Step3TaggingPanel(QWidget):
         keywords = [k.lower() for k in (self.config.get_demucs_keywords() or [])]
         keywords += ["inst", "instrumental", "off vocal", "off-vocal", "カラオケ"]
         return any(k in lower_name for k in keywords if k)
+
+    def _generate_final_filename(self, current_filename: str) -> str:
+        """FLACファイルからタグ情報を読み取り、最終的なファイル名を生成する
+        形式: (Disc N-)トラック番号 タイトル.flac
+        ディスク番号が1の場合または存在しない場合はディスク番号を省略
+        """
+        if not self.album_folder or not self.workflow.state:
+            return current_filename
+        
+        # FLACファイルのパスを特定（_flac_src 内を優先）
+        base_dir = self.album_folder
+        raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
+        candidate = os.path.join(self.album_folder, raw_dirname)
+        if os.path.isdir(candidate):
+            base_dir = candidate
+        
+        flac_path = os.path.join(base_dir, current_filename)
+        if not os.path.exists(flac_path):
+            # フォールバック: アルバムルート直下も確認
+            flac_path = os.path.join(self.album_folder, current_filename)
+            if not os.path.exists(flac_path):
+                return current_filename
+        
+        try:
+            from mutagen.flac import FLAC
+            audio = FLAC(flac_path)
+            
+            # タグから情報取得
+            track_num = audio.get("tracknumber", [""])[0]
+            disc_num = audio.get("discnumber", ["1"])[0]
+            title = audio.get("title", ["Unknown"])[0]
+            
+            # トラック番号を整形（分数形式の場合は最初の数値のみ、0埋め2桁）
+            if "/" in str(track_num):
+                track_num = str(track_num).split("/")[0]
+            track_num_str = str(track_num).zfill(2) if track_num else "00"
+            
+            # ディスク番号を整形（分数形式の場合は最初の数値のみ）
+            if "/" in str(disc_num):
+                disc_num = str(disc_num).split("/")[0]
+            try:
+                disc_int = int(disc_num) if disc_num else 1
+            except (ValueError, TypeError):
+                disc_int = 1
+            
+            # ファイル名生成: ディスク番号が2以上の場合のみ接頭辞を追加
+            if disc_int >= 2:
+                new_filename = f"Disc {disc_int}-{track_num_str} {title}.flac"
+            else:
+                new_filename = f"{track_num_str} {title}.flac"
+            
+            # ファイル名禁止文字をサニタイズ
+            new_filename = self._sanitize_filename(new_filename)
+            
+            return new_filename
+            
+        except Exception as e:
+            print(f"[WARN] タグ読み取り失敗: {current_filename}: {e}")
+            return current_filename
+    
+    def _sanitize_filename(self, filename: str) -> str:
+        """ファイル名に使用できない文字を全角等に置換"""
+        replacements = {
+            '\\': '¥',
+            '/': '／',
+            ':': '：',
+            '*': '＊',
+            '?': '？',
+            '"': '"',
+            '<': '＜',
+            '>': '＞',
+            '|': '｜'
+        }
+        for char, replacement in replacements.items():
+            filename = filename.replace(char, replacement)
+        return filename
 
     def on_rescan(self):
         """Mp3tagを使わずに紐づけを再構築"""

@@ -159,9 +159,10 @@ class Step4AacPanel(QWidget):
             QMessageBox.critical(self, "起動失敗", str(e))
 
     def on_ingest_outputs(self, init_dir: str | None = None):
-        """MediaHuman の出力から .m4a を取り込み、_aac_output に集約する。
+        """MediaHuman の出力から .m4a を取り込み、_aac_output/アルバム名/ に集約する。
         - 想定: MediaHuman の出力先はユーザー側設定。
         - 取り込み方法: ダイアログで出力フォルダを選んでもらい、そこから .m4a をコピー。
+        - ファイル名を finalFile/instrumentalFile に基づいてリネーム（拡張子を .m4a に変更）
         """
         from PySide6.QtWidgets import QFileDialog
         if not self.album_folder or not self.workflow.state:
@@ -177,17 +178,68 @@ class Step4AacPanel(QWidget):
         if not src:
             return
 
-        # 出力先
+        # アルバム名を取得してサニタイズ
+        album_name = self.workflow.state.get_album_name()
+        album_name = self._sanitize_foldername(album_name)
+        
+        # 出力先: _aac_output/アルバム名/
         aac_dir_name = self.workflow.state.get_path("aacOutput")
-        dst = os.path.join(self.album_folder, aac_dir_name)
+        dst_base = os.path.join(self.album_folder, aac_dir_name)
+        dst = os.path.join(dst_base, album_name)
         os.makedirs(dst, exist_ok=True)
+
+        # トラック情報から期待されるファイル名マッピングを作成
+        tracks = self.workflow.state.get_tracks()
+        expected_files = {}  # {元のトラック番号: 最終ファイル名}
+        
+        import re
+        for track in tracks:
+            final_file = track.get("finalFile", "")
+            inst_file = track.get("instrumentalFile", "")
+            
+            # トラック番号を抽出
+            if final_file:
+                m = re.match(r"^(?:Disc \d+-)?(\d{2,3})", final_file)
+                if m:
+                    track_num = m.group(1)
+                    # 拡張子を .m4a に変更
+                    base_name = os.path.splitext(final_file)[0]
+                    expected_files[track_num] = base_name + ".m4a"
+            
+            if inst_file:
+                m = re.match(r"^(?:Disc \d+-)?(\d{2,3})", inst_file)
+                if m:
+                    track_num = m.group(1)
+                    base_name = os.path.splitext(inst_file)[0]
+                    # Instの場合は別のキーで保存（番号+Inst識別子）
+                    expected_files[track_num + "_inst"] = base_name + ".m4a"
 
         import shutil
         count = 0
         for name in os.listdir(src):
             if name.lower().endswith(".m4a"):
                 src_file = os.path.join(src, name)
-                dst_file = os.path.join(dst, name)
+                
+                # 元のファイル名からトラック番号を抽出してマッピング
+                m = re.match(r"^(\d{2,3})", name)
+                if m:
+                    track_num = m.group(1)
+                    # Instかどうかを判定
+                    is_inst = "(inst)" in name.lower() or "instrumental" in name.lower()
+                    
+                    # 期待されるファイル名を取得
+                    key = track_num + "_inst" if is_inst else track_num
+                    expected_name = expected_files.get(key)
+                    
+                    if expected_name:
+                        dst_file = os.path.join(dst, expected_name)
+                    else:
+                        # マッピングが見つからない場合は元の名前を使用
+                        dst_file = os.path.join(dst, name)
+                else:
+                    # トラック番号が抽出できない場合は元の名前を使用
+                    dst_file = os.path.join(dst, name)
+                
                 try:
                     if os.path.exists(dst_file):
                         # 既存ファイルは上書き前に削除
@@ -196,13 +248,35 @@ class Step4AacPanel(QWidget):
                     count += 1
                 except Exception as e:
                     print(f"[ERROR] move failed: {e}")
-        self.folder_list.addItem(QListWidgetItem(f"取り込み (移動) 完了: {count} ファイル"))
+        self.folder_list.addItem(QListWidgetItem(f"取り込み (移動) 完了: {count} ファイル → {dst}"))
+    
+    def _sanitize_foldername(self, name: str) -> str:
+        """フォルダ名に使用できない文字を全角等に置換"""
+        replacements = {
+            '\\': '¥',
+            '/': '／',
+            ':': '：',
+            '*': '＊',
+            '?': '？',
+            '"': '"',
+            '<': '＜',
+            '>': '＞',
+            '|': '｜'
+        }
+        for char, replacement in replacements.items():
+            name = name.replace(char, replacement)
+        return name
 
     def on_complete(self):
         """Step4 完了: 取り込み数で簡易チェックし、次へ進む"""
         if not self.album_folder or not self.workflow.state:
             return
-        dst = os.path.join(self.album_folder, self.workflow.state.get_path("aacOutput"))
+        
+        # アルバム名サブフォルダを含めたパス
+        album_name = self._sanitize_foldername(self.workflow.state.get_album_name())
+        dst_base = os.path.join(self.album_folder, self.workflow.state.get_path("aacOutput"))
+        dst = os.path.join(dst_base, album_name)
+        
         got = 0
         if os.path.exists(dst):
             got = len([f for f in os.listdir(dst) if f.lower().endswith('.m4a')])
