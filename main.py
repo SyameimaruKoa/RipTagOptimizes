@@ -26,7 +26,18 @@ def check_required_directories(config: ConfigManager) -> tuple[bool, list[str]]:
     
     missing = []
     for section, key, label in required_dirs:
-        value = config.config.get(section, key, fallback='').strip()
+        # Use ConfigManager helper methods so environment variables (e.g. %USERPROFILE%)
+        # and ~ are expanded before existence checks.
+        if section == "Paths":
+            value = config.get_directory(key)
+        elif section == "Settings":
+            # get_setting will expand path-like settings ending with 'dir' or 'path'
+            value = config.get_setting(key, fallback='')
+        else:
+            # Fallback to raw config read (shouldn't normally happen)
+            value = config.config.get(section, key, fallback='')
+
+        value = (value or '').strip()
         if not value:
             missing.append(f"{label} (未設定)")
         elif not Path(value).exists():

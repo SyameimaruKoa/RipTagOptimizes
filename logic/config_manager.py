@@ -12,7 +12,11 @@ class ConfigManager:
     
     def __init__(self, config_path: str = "config.ini"):
         self.config_path = config_path
-        self.config = configparser.ConfigParser()
+        # Disable interpolation so percent signs like %USERPROFILE% are
+        # preserved and can be expanded later with os.path.expandvars.
+        # Using interpolation=None avoids ConfigParser treating %... as
+        # interpolation placeholders which caused InterpolationSyntaxError.
+        self.config = configparser.ConfigParser(interpolation=None)
         self.load()
     
     @staticmethod

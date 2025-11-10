@@ -5,3 +5,9 @@ work/*/*
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Python bytecode
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.Python
