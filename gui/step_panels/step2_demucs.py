@@ -5,7 +5,7 @@ import os
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QFileDialog, QMessageBox, QListWidget,
-    QListWidgetItem, QCheckBox
+    QListWidgetItem, QCheckBox, QProgressDialog
 )
 from PySide6.QtCore import Signal, Qt, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -282,7 +282,7 @@ class Step2DemucsPanel(QWidget):
     def on_open_colab(self):
         """Colabリンクを開く"""
         # 仕様: 指定されたハイブリッド Demucs Colab へのリンクを既定ブラウザで開く
-        url = QUrl("https://colab.research.google.com/gist/SyameimaruKoa/8b9c42bd3ddccfe8512376e8a43a7633")
+        url = QUrl("https://colab.research.google.com/gist/SyameimaruKoa/8b9c42bd3ddccfe8512376e8a43a7633/hybrid-demucs-music-source-separation.ipynb")
         if not QDesktopServices.openUrl(url):
             QMessageBox.warning(self, "エラー", "ブラウザでColabリンクを開けませんでした。")
     
@@ -322,7 +322,32 @@ class Step2DemucsPanel(QWidget):
             )
             return
         
-        for song_folder, inst_file in inst_files:
+        # プログレスダイアログを表示
+        progress = QProgressDialog(
+            "インストゥルメンタル版を作成中...",
+            "キャンセル",
+            0,
+            len(inst_files),
+            self
+        )
+        progress.setWindowTitle("処理中")
+        progress.setWindowModality(Qt.WindowModal)
+        progress.setMinimumDuration(0)  # 即座に表示
+        
+        for idx, (song_folder, inst_file) in enumerate(inst_files):
+            # キャンセルチェック
+            if progress.wasCanceled():
+                QMessageBox.information(
+                    self,
+                    "キャンセル",
+                    f"{success_count} 個のインストゥルメンタル版を作成しました（中断）"
+                )
+                return
+            
+            # プログレス更新
+            song_name = os.path.basename(song_folder)
+            progress.setLabelText(f"処理中: {song_name}")
+            progress.setValue(idx)
             # 元のファイル名を推定
             song_name = os.path.basename(song_folder)
             
@@ -332,21 +357,52 @@ class Step2DemucsPanel(QWidget):
                 break
             # 出力先は root ではなく _flac_src を優先
             flac_src_dir = self._get_flac_src_dir()
-            os.makedirs(flac_src_dir, exist_ok=True)
+            try:
+                os.makedirs(flac_src_dir, exist_ok=True)
+            except Exception as e:
+                print(f"[ERROR] 出力ディレクトリの作成に失敗: {e}")
+                continue
+            
             output_flac = os.path.join(flac_src_dir, f"{song_name} (Inst).flac")
+            
+            # パスの長さチェック（Windows の MAX_PATH 制限対策）
+            if len(output_flac) > 260:
+                print(f"[WARNING] 出力パスが長すぎます ({len(output_flac)} 文字): {output_flac}")
+                # 短縮版のファイル名を使用
+                short_name = song_name[:50] if len(song_name) > 50 else song_name
+                output_flac = os.path.join(flac_src_dir, f"{short_name} (Inst).flac")
+                print(f"[INFO] 短縮パスを使用: {output_flac}")
             
             # WAVの場合はFLACに変換
             if inst_file.lower().endswith('.wav'):
+                # 絶対パスに変換
+                inst_file_abs = os.path.abspath(inst_file)
+                output_flac_abs = os.path.abspath(output_flac)
+                
+                # 既に出力ファイルが存在する場合は削除
+                if os.path.exists(output_flac_abs):
+                    try:
+                        os.remove(output_flac_abs)
+                        print(f"[INFO] 既存ファイルを削除: {output_flac_abs}")
+                    except Exception as e:
+                        print(f"[ERROR] 既存ファイルの削除に失敗: {e}")
+                        continue
+                
                 # flac -8 input.wav -o output.flac
+                # --keep-foreign-metadata オプションを追加してWARNINGを回避
                 runner = ExternalToolRunner()
                 success, stdout, stderr = runner.run_cli_tool(
                     flac_path,
-                    ["-8", inst_file, "-o", output_flac],
+                    ["-8", "--keep-foreign-metadata", inst_file_abs, "-o", output_flac_abs],
                     self.album_folder
                 )
                 
                 if not success:
                     print(f"[ERROR] FLAC変換失敗: {stderr}")
+                    print(f"[INFO] 入力ファイル: {inst_file_abs}")
+                    print(f"[INFO] 出力ファイル: {output_flac_abs}")
+                    print(f"[INFO] 出力ディレクトリの存在: {os.path.exists(os.path.dirname(output_flac_abs))}")
+                    print(f"[INFO] 出力ディレクトリの書き込み権限: {os.access(os.path.dirname(output_flac_abs), os.W_OK)}")
                     continue
             else:
                 # 既にFLACの場合は移動（重複時は上書き）
@@ -377,15 +433,45 @@ class Step2DemucsPanel(QWidget):
                 # ジャンルだけ上書き
                 dest["genre"] = ["Instrumental"]
                 dest.save()
+                
+                # state.json を更新: 元トラックに instrumentalFile を追加
+                if orig_path and self.workflow.state:
+                    # 元トラックのIDを探す
+                    orig_basename = os.path.basename(orig_path)
+                    track_id = None
+                    state = self.workflow.state.state
+                    for track in state.get("tracks", []):
+                        if track.get("originalFile") == orig_basename or track.get("currentFile") == orig_basename:
+                            track_id = track.get("id")
+                            break
+                    
+                    if track_id:
+                        # インストファイルの相対パス（ファイル名のみ）
+                        inst_filename = os.path.basename(output_flac)
+                        print(f"[INFO] state.json を更新: {track_id} に instrumentalFile = {inst_filename}")
+                        self.workflow.state.update_track(track_id, {
+                            "instrumentalFile": inst_filename,
+                            "hasInstrumental": True
+                        })
+                    else:
+                        print(f"[WARNING] 元トラックのIDが見つかりません: {orig_basename}")
+                
                 success_count += 1
             except Exception as e:
                 print(f"[ERROR] タグコピー失敗: {e}")
         
+        # プログレス完了
+        progress.setValue(len(inst_files))
+        progress.close()
+        
         if success_count > 0:
-            # state.json を更新（インストトラックを追加）
-            # TODO: トラック情報に追加
-            
             # サイレント化（ログとして一覧に表示する方針ならここで別UI要素に追加予定）
+            print(f"[INFO] {success_count} 個のインストゥルメンタル版を作成しました")
+            QMessageBox.information(
+                self,
+                "完了",
+                f"{success_count} 個のインストゥルメンタル版を作成しました"
+            )
             self.step_completed.emit()
         else:
             QMessageBox.warning(self, "エラー", "インストゥルメンタル版の作成に失敗しました。")
