@@ -368,14 +368,20 @@ class Step2DemucsPanel(QWidget):
                 print(f"[ERROR] 出力ディレクトリの作成に失敗: {e}")
                 continue
             
-            output_flac = os.path.join(flac_src_dir, f"{song_name} (Inst).flac")
+            # アルバム名サブフォルダを含むパス
+            album_name = self.workflow.state.get_album_name() if self.workflow.state else "Unknown"
+            sanitized_album_name = self._sanitize_foldername(album_name)
+            flac_album_dir = os.path.join(flac_src_dir, sanitized_album_name)
+            os.makedirs(flac_album_dir, exist_ok=True)
+            
+            output_flac = os.path.join(flac_album_dir, f"{song_name} (Inst).flac")
             
             # パスの長さチェック（Windows の MAX_PATH 制限対策）
             if len(output_flac) > 260:
                 print(f"[WARNING] 出力パスが長すぎます ({len(output_flac)} 文字): {output_flac}")
                 # 短縮版のファイル名を使用
                 short_name = song_name[:50] if len(song_name) > 50 else song_name
-                output_flac = os.path.join(flac_src_dir, f"{short_name} (Inst).flac")
+                output_flac = os.path.join(flac_album_dir, f"{short_name} (Inst).flac")
                 print(f"[INFO] 短縮パスを使用: {output_flac}")
             
             # WAVの場合はFLACに変換
@@ -549,7 +555,7 @@ class Step2DemucsPanel(QWidget):
         return None
 
     def _get_flac_src_dir(self) -> str:
-        """FLAC のソース置き場 (_flac_src) の実パスを返す。state の設定があればそれを使う。"""
+        """FLAC のソース置き場 (_flac_src/アルバム名) の実パスを返す。state の設定があればそれを使う。"""
         raw_dirname = None
         try:
             if self.workflow and self.workflow.state:
@@ -557,11 +563,18 @@ class Step2DemucsPanel(QWidget):
         except Exception:
             raw_dirname = None
         raw_dirname = raw_dirname or "_flac_src"
-        return os.path.join(self.album_folder or "", raw_dirname)
+        
+        # アルバム名を取得してサブフォルダパスを生成
+        album_name = "Unknown"
+        if self.workflow and self.workflow.state:
+            album_name = self.workflow.state.get_album_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
+        
+        return os.path.join(self.album_folder or "", raw_dirname, sanitized_album_name)
 
     def _ensure_flac_src_migration(self):
-        """アルバム直下にある .flac を _flac_src へ移動する。
-        - 既に _flac_src にあるものは無視
+        """アルバム直下にある .flac を _flac_src/アルバム名 へ移動する。
+        - 既に _flac_src/アルバム名 にあるものは無視
         - サブフォルダは走査しない（トップレベルのみ）
         """
         if not self.album_folder:
@@ -582,8 +595,25 @@ class Step2DemucsPanel(QWidget):
                     import shutil
                     shutil.move(src_path, dst_path)
                     moved += 1
-                    print(f"[INFO] Moved FLAC to _flac_src: {name}")
+                    print(f"[INFO] Moved FLAC to _flac_src/アルバム名: {name}")
                 except Exception as e:
                     print(f"[WARN] 移動失敗: {name}: {e}")
         if moved:
-            print(f"[INFO] root 直下の FLAC {moved} 件を _flac_src へ移動しました")
+            print(f"[INFO] root 直下の FLAC {moved} 件を _flac_src/アルバム名 へ移動しました")
+    
+    def _sanitize_foldername(self, name: str) -> str:
+        """フォルダ名に使用できない文字を全角等に置換"""
+        replacements = {
+            '\\': '¥',
+            '/': '／',
+            ':': '：',
+            '*': '＊',
+            '?': '？',
+            '"': '"',
+            '<': '＜',
+            '>': '＞',
+            '|': '｜'
+        }
+        for char, replacement in replacements.items():
+            name = name.replace(char, replacement)
+        return name

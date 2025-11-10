@@ -105,11 +105,13 @@ class Step5OpusPanel(QWidget):
         if self.album_folder == album_folder:
             return
         self.album_folder = album_folder
-        # foobar に渡す入力は _flac_src を優先
+        # foobar に渡す入力は _flac_src/アルバム名 を優先
         flac_src = None
         try:
             raw_dirname = self.workflow.state.get_path("rawFlacSrc") if self.workflow and self.workflow.state else "_flac_src"
-            candidate = os.path.join(album_folder, raw_dirname)
+            album_name = self.workflow.state.get_album_name() if self.workflow and self.workflow.state else "Unknown"
+            sanitized_album_name = self._sanitize_foldername(album_name)
+            candidate = os.path.join(album_folder, raw_dirname, sanitized_album_name)
             if os.path.isdir(candidate):
                 flac_src = candidate
         except Exception:

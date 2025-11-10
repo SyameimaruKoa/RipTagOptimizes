@@ -151,7 +151,7 @@ class Step3TaggingPanel(QWidget):
             QMessageBox.warning(self, "エラー", "アルバムフォルダが選択されていません。")
             return
         
-        # Mp3tag を起動（FLAC はサブフォルダ _flac_src を対象）
+        # Mp3tag を起動（FLAC はサブフォルダ _flac_src/アルバム名 を対象）
         self.tool_runner = ExternalToolRunner(self)
         self.tool_runner.finished.connect(self.on_mp3tag_finished)
         self.tool_runner.error_occurred.connect(self.on_mp3tag_error)
@@ -159,7 +159,9 @@ class Step3TaggingPanel(QWidget):
         target_dir = self.album_folder
         if self.workflow.state:
             raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
-            candidate = os.path.join(self.album_folder, raw_dirname)
+            album_name = self.workflow.state.get_album_name()
+            sanitized_album_name = self._sanitize_foldername(album_name)
+            candidate = os.path.join(self.album_folder, raw_dirname, sanitized_album_name)
             if os.path.isdir(candidate):
                 target_dir = candidate
         
@@ -222,13 +224,15 @@ class Step3TaggingPanel(QWidget):
         
         self.mapping_list.clear()
 
-        # 現在のFLACファイルを取得（サブフォルダ _flac_src 優先）
+        # 現在のFLACファイルを取得（サブフォルダ _flac_src/アルバム名 優先）
         current_flac_files = []
         try:
             base_dir = self.album_folder
             if self.workflow.state:
                 raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
-                candidate = os.path.join(self.album_folder, raw_dirname)
+                album_name = self.workflow.state.get_album_name()
+                sanitized_album_name = self._sanitize_foldername(album_name)
+                candidate = os.path.join(self.album_folder, raw_dirname, sanitized_album_name)
                 if os.path.isdir(candidate):
                     base_dir = candidate
             for file in os.listdir(base_dir):
@@ -684,10 +688,12 @@ class Step3TaggingPanel(QWidget):
         if not self.album_folder or not self.workflow.state:
             return current_filename
         
-        # FLACファイルのパスを特定（_flac_src 内を優先）
+        # FLACファイルのパスを特定（_flac_src/アルバム名 内を優先）
         base_dir = self.album_folder
         raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
-        candidate = os.path.join(self.album_folder, raw_dirname)
+        album_name = self.workflow.state.get_album_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
+        candidate = os.path.join(self.album_folder, raw_dirname, sanitized_album_name)
         if os.path.isdir(candidate):
             base_dir = candidate
         
@@ -777,7 +783,8 @@ class Step3TaggingPanel(QWidget):
         if not self.album_folder or not self.workflow.state:
             return
 
-        has_artwork = check_album_has_artwork(self.album_folder)
+        album_name = self.workflow.state.get_album_name()
+        has_artwork = check_album_has_artwork(self.album_folder, album_name)
         self.workflow.state.set_artwork(has_artwork)
         # OKポップは不要（検査結果は state のみ更新）
     
@@ -817,12 +824,14 @@ class Step3TaggingPanel(QWidget):
         if not self.workflow.state or not self.album_folder:
             return
 
-        # _flac_src 配下の全 FLAC へ適用
+        # _flac_src/アルバム名 配下の全 FLAC へ適用
         try:
             raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
         except Exception:
             raw_dirname = "_flac_src"
-        flac_src_dir = os.path.join(self.album_folder, raw_dirname)
+        album_name = self.workflow.state.get_album_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
+        flac_src_dir = os.path.join(self.album_folder, raw_dirname, sanitized_album_name)
         if not os.path.isdir(flac_src_dir):
             return
 
@@ -864,15 +873,17 @@ class Step3TaggingPanel(QWidget):
         # 現在のトラック情報を取得
         tracks = self.workflow.state.get_tracks()
         
-        # _flac_src ディレクトリから実際のファイル一覧を取得
+        # _flac_src/アルバム名 ディレクトリから実際のファイル一覧を取得
         try:
             raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
         except Exception:
             raw_dirname = "_flac_src"
-        flac_src_dir = os.path.join(self.album_folder, raw_dirname)
+        album_name = self.workflow.state.get_album_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
+        flac_src_dir = os.path.join(self.album_folder, raw_dirname, sanitized_album_name)
         
         if not os.path.isdir(flac_src_dir):
-            QMessageBox.warning(self, "エラー", f"{raw_dirname} フォルダが見つかりません。")
+            QMessageBox.warning(self, "エラー", f"{raw_dirname}/{sanitized_album_name} フォルダが見つかりません。")
             return
         
         actual_files = sorted([f for f in os.listdir(flac_src_dir) if f.lower().endswith('.flac')])

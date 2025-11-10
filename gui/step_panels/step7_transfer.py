@@ -204,23 +204,28 @@ class Step7TransferPanel(QWidget):
         self._auto_move_flac_to_final()
     
     def _auto_move_flac_to_final(self):
-        """FLACファイルを自動的に_final_flacフォルダに移動（内部処理）"""
-        if not self.album_folder:
+        """FLACファイルを自動的に_final_flac/アルバム名フォルダに移動（内部処理）"""
+        if not self.album_folder or not self.workflow.state:
             return
         
-        flac_src = os.path.join(self.album_folder, "_flac_src")
-        final_flac = os.path.join(self.album_folder, "_final_flac")
+        album_name = self.workflow.state.get_album_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
         
-        # _flac_srcが存在しない、または_final_flacが既に存在する場合はスキップ
+        flac_src = os.path.join(self.album_folder, "_flac_src", sanitized_album_name)
+        final_flac_base = os.path.join(self.album_folder, "_final_flac")
+        final_flac = os.path.join(final_flac_base, sanitized_album_name)
+        
+        # _flac_src/アルバム名が存在しない、または_final_flac/アルバム名が既に存在する場合はスキップ
         if not os.path.exists(flac_src):
             return
         
         if os.path.exists(final_flac):
             return  # 既に移動済み
         
-        # shutil.moveで移動
+        # 親フォルダを作成してから移動
         try:
             import shutil
+            os.makedirs(final_flac_base, exist_ok=True)
             shutil.move(flac_src, final_flac)
         except Exception as e:
             # エラーが発生してもUIには表示せず、ログに記録するのみ
@@ -228,53 +233,61 @@ class Step7TransferPanel(QWidget):
     
     # === サブステップ1: FLAC関連 ===
     def on_move_flac_to_final(self):
-        """FLACファイルを_final_flacフォルダに移動（手動実行）"""
-        if not self.album_folder:
+        """FLACファイルを_final_flac/アルバム名フォルダに移動（手動実行）"""
+        if not self.album_folder or not self.workflow.state:
             QMessageBox.warning(self, "エラー", "アルバムが選択されていません。")
             return
         
-        flac_src = os.path.join(self.album_folder, "_flac_src")
-        final_flac = os.path.join(self.album_folder, "_final_flac")
+        album_name = self.workflow.state.get_album_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
         
-        # _final_flacが既に存在する場合
+        flac_src = os.path.join(self.album_folder, "_flac_src", sanitized_album_name)
+        final_flac_base = os.path.join(self.album_folder, "_final_flac")
+        final_flac = os.path.join(final_flac_base, sanitized_album_name)
+        
+        # _final_flac/アルバム名が既に存在する場合
         if os.path.exists(final_flac):
             QMessageBox.information(
                 self,
                 "確認",
-                f"FLACは既に _final_flac に移動済みです。\n\n{final_flac}"
+                f"FLACは既に _final_flac/{sanitized_album_name} に移動済みです。\n\n{final_flac}"
             )
             return
         
-        # _flac_srcが存在しない場合
+        # _flac_src/アルバム名が存在しない場合
         if not os.path.exists(flac_src):
             QMessageBox.warning(self, "エラー", f"FLACフォルダが見つかりません:\n{flac_src}")
             return
         
-        # shutil.moveで移動
+        # 親フォルダを作成してから移動
         try:
             import shutil
+            os.makedirs(final_flac_base, exist_ok=True)
             shutil.move(flac_src, final_flac)
             QMessageBox.information(
                 self,
                 "完了",
-                f"FLACファイルを _final_flac に移動しました。\n\n"
+                f"FLACファイルを _final_flac/{sanitized_album_name} に移動しました。\n\n"
                 f"移動先: {final_flac}"
             )
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"FLACの移動に失敗しました:\n{e}")
     
     def on_open_final_flac_folder(self):
-        """_final_flacフォルダを開く"""
-        if not self.album_folder:
+        """_final_flac/アルバム名フォルダを開く"""
+        if not self.album_folder or not self.workflow.state:
             QMessageBox.warning(self, "エラー", "アルバムが選択されていません。")
             return
         
-        final_flac = os.path.join(self.album_folder, "_final_flac")
+        album_name = self.workflow.state.get_album_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
+        final_flac = os.path.join(self.album_folder, "_final_flac", sanitized_album_name)
+        
         if not os.path.exists(final_flac):
             QMessageBox.warning(
                 self, 
                 "エラー", 
-                f"_final_flac フォルダが見つかりません。\n\n"
+                f"_final_flac/{sanitized_album_name} フォルダが見つかりません。\n\n"
                 f"先に「⓪ FLACを_final_flacに移動」ボタンを実行してください。\n\n"
                 f"期待されるパス: {final_flac}"
             )
@@ -465,3 +478,20 @@ class Step7TransferPanel(QWidget):
                     f"手動で削除してください:\n{self.album_folder}\n\n"
                     f"エラー: {e2}"
                 )
+    
+    def _sanitize_foldername(self, name: str) -> str:
+        """フォルダ名に使用できない文字を全角等に置換"""
+        replacements = {
+            '\\': '¥',
+            '/': '／',
+            ':': '：',
+            '*': '＊',
+            '?': '？',
+            '"': '"',
+            '<': '＜',
+            '>': '＞',
+            '|': '｜'
+        }
+        for char, replacement in replacements.items():
+            name = name.replace(char, replacement)
+        return name

@@ -318,10 +318,10 @@ class GenericStepPanel(QWidget):
         final_dir = os.path.join(final_base, album_name)
         os.makedirs(final_dir, exist_ok=True)
         
-        # _flac_src を優先的に探索
+        # _flac_src/アルバム名 を優先的に探索
         source_dir = self.album_folder
         raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
-        candidate = os.path.join(self.album_folder, raw_dirname)
+        candidate = os.path.join(self.album_folder, raw_dirname, album_name)
         if os.path.isdir(candidate):
             source_dir = candidate
         

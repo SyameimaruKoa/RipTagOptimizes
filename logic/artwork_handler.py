@@ -29,18 +29,31 @@ def check_flac_has_artwork(flac_path: str) -> bool:
         return False
 
 
-def check_album_has_artwork(album_folder: str) -> bool:
+def check_album_has_artwork(album_folder: str, album_name: str = None) -> bool:
     """アルバム内の FLAC にアートワークがあるかチェック。
-    まず `_flac_src` サブフォルダがあれば優先して調べ、無ければルート直下を調べる。
+    まず `_flac_src/アルバム名` サブフォルダがあれば優先して調べ、無ければルート直下を調べる。
+    
+    Args:
+        album_folder: アルバムフォルダのパス
+        album_name: アルバム名（省略時は検索しない）
     """
     if not os.path.exists(album_folder):
         return False
 
-    # 優先: サブフォルダ _flac_src
-    flac_src = os.path.join(album_folder, "_flac_src")
     candidates_dirs = []
-    if os.path.isdir(flac_src):
-        candidates_dirs.append(flac_src)
+    
+    # 優先: サブフォルダ _flac_src/アルバム名
+    if album_name:
+        # アルバム名をサニタイズ
+        sanitized_album_name = _sanitize_foldername(album_name)
+        flac_src = os.path.join(album_folder, "_flac_src", sanitized_album_name)
+        if os.path.isdir(flac_src):
+            candidates_dirs.append(flac_src)
+    
+    # フォールバック: _flac_src直下、アルバムルート
+    flac_src_root = os.path.join(album_folder, "_flac_src")
+    if os.path.isdir(flac_src_root):
+        candidates_dirs.append(flac_src_root)
     candidates_dirs.append(album_folder)
 
     for d in candidates_dirs:
@@ -54,6 +67,24 @@ def check_album_has_artwork(album_folder: str) -> bool:
             pass
 
     return False
+
+
+def _sanitize_foldername(name: str) -> str:
+    """フォルダ名に使用できない文字を全角等に置換"""
+    replacements = {
+        '\\': '¥',
+        '/': '／',
+        ':': '：',
+        '*': '＊',
+        '?': '？',
+        '"': '"',
+        '<': '＜',
+        '>': '＞',
+        '|': '｜'
+    }
+    for char, replacement in replacements.items():
+        name = name.replace(char, replacement)
+    return name
 
 
 def extract_artwork_from_flac(flac_path: str, output_path: str) -> bool:
@@ -143,19 +174,31 @@ def resize_artwork_with_magick(
         return False, f"実行エラー: {str(e)}"
 
 
-def find_first_flac_with_artwork(album_folder: str) -> Optional[str]:
+def find_first_flac_with_artwork(album_folder: str, album_name: str = None) -> Optional[str]:
     """
     アルバム内で最初にアートワークを持つ FLAC のパスを返す
-    _flac_src サブフォルダを優先して探索
+    _flac_src/アルバム名 サブフォルダを優先して探索
+    
+    Args:
+        album_folder: アルバムフォルダのパス
+        album_name: アルバム名（省略時は検索しない）
     """
     if not os.path.isdir(album_folder):
         return None
     
-    # 優先: _flac_src サブフォルダ
-    flac_src = os.path.join(album_folder, "_flac_src")
     search_dirs = []
-    if os.path.isdir(flac_src):
-        search_dirs.append(flac_src)
+    
+    # 優先: _flac_src/アルバム名 サブフォルダ
+    if album_name:
+        sanitized_album_name = _sanitize_foldername(album_name)
+        flac_src = os.path.join(album_folder, "_flac_src", sanitized_album_name)
+        if os.path.isdir(flac_src):
+            search_dirs.append(flac_src)
+    
+    # フォールバック: _flac_src直下、アルバムルート
+    flac_src_root = os.path.join(album_folder, "_flac_src")
+    if os.path.isdir(flac_src_root):
+        search_dirs.append(flac_src_root)
     search_dirs.append(album_folder)
     
     for search_dir in search_dirs:

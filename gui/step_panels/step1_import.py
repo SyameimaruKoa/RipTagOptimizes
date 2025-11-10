@@ -421,8 +421,11 @@ class Step1ImportPanel(QWidget):
     
     def _initialize_album_state(self, dest_folder, album_name, artist_name):
         """アルバムのstate.jsonを初期化"""
-        # _flac_src に FLAC を隔離
-        flac_src_dir = os.path.join(dest_folder, "_flac_src")
+        # ファイル名をサニタイズ
+        sanitized_album_name = self._sanitize_foldername(album_name)
+        
+        # _flac_src/アルバム名 に FLAC を隔離
+        flac_src_dir = os.path.join(dest_folder, "_flac_src", sanitized_album_name)
         try:
             os.makedirs(flac_src_dir, exist_ok=True)
         except:
@@ -442,7 +445,7 @@ class Step1ImportPanel(QWidget):
         except:
             return False
 
-        # _flac_src 内の .flac を列挙
+        # _flac_src/アルバム名 内の .flac を列挙
         flac_files = []
         try:
             for file in os.listdir(flac_src_dir):
@@ -502,3 +505,20 @@ class Step1ImportPanel(QWidget):
         # 最初のアルバムの完了シグナルを発火（リスト更新のため）
         if success_count > 0:
             self.import_completed.emit("")  # 空文字列で全体更新を促す
+    
+    def _sanitize_foldername(self, name: str) -> str:
+        """フォルダ名に使用できない文字を全角等に置換"""
+        replacements = {
+            '\\': '¥',
+            '/': '／',
+            ':': '：',
+            '*': '＊',
+            '?': '？',
+            '"': '"',
+            '<': '＜',
+            '>': '＞',
+            '|': '｜'
+        }
+        for char, replacement in replacements.items():
+            name = name.replace(char, replacement)
+        return name

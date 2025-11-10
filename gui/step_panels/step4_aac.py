@@ -318,12 +318,19 @@ class Step4AacPanel(QWidget):
     # helpers
     # ------------------------
     def _resolve_input_folder(self, album_folder: str) -> str | None:
-        """_flac_src を優先的に返す。無ければアルバムルート。"""
+        """_flac_src/アルバム名 を優先的に返す。無ければアルバムルート。"""
         try:
             raw_dirname = self.workflow.state.get_path("rawFlacSrc") if self.workflow and self.workflow.state else "_flac_src"
         except Exception:
             raw_dirname = "_flac_src"
-        candidate = os.path.join(album_folder, raw_dirname)
+        
+        # アルバム名を取得してサブフォルダパスを生成
+        album_name = "Unknown"
+        if self.workflow and self.workflow.state:
+            album_name = self.workflow.state.get_album_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
+        
+        candidate = os.path.join(album_folder, raw_dirname, sanitized_album_name)
         return candidate if os.path.isdir(candidate) else album_folder
 
     def _check_mediahuman_status(self):

@@ -142,7 +142,8 @@ class Step6ArtworkPanel(QWidget):
     def on_extract_from_flac(self):
         if not self.album_folder:
             return
-        target = ah.find_first_flac_with_artwork(self.album_folder)
+        album_name = self.workflow.state.get_album_name() if self.workflow.state else None
+        target = ah.find_first_flac_with_artwork(self.album_folder, album_name)
         if not target:
             QMessageBox.warning(self, "見つからない", "アートワーク付き FLAC が見つかりません。")
             return
@@ -207,9 +208,17 @@ class Step6ArtworkPanel(QWidget):
         if not img:
             QMessageBox.warning(self, "未生成", "cover.jpg を生成してください。")
             return
-        aac_dir = os.path.join(self.album_folder, self.workflow.state.get_path("aacOutput"))
+        
+        # アルバム名を取得してサニタイズ
+        album_name = self.workflow.state.get_album_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
+        
+        # _aac_output/アルバム名/
+        aac_base = os.path.join(self.album_folder, self.workflow.state.get_path("aacOutput"))
+        aac_dir = os.path.join(aac_base, sanitized_album_name)
+        
         if not os.path.isdir(aac_dir):
-            QMessageBox.warning(self, "未取り込み", "_aac_output が見つかりません。先に Step4 を完了してください。")
+            QMessageBox.warning(self, "未取り込み", f"_aac_output/{sanitized_album_name} が見つかりません。先に Step4 を完了してください。")
             return
         ok_cnt = 0
         err_cnt = 0
@@ -233,9 +242,17 @@ class Step6ArtworkPanel(QWidget):
         if not img:
             QMessageBox.warning(self, "未生成", "cover.webp を生成してください。")
             return
-        opus_dir = os.path.join(self.album_folder, self.workflow.state.get_path("opusOutput"))
+        
+        # アルバム名を取得してサニタイズ
+        album_name = self.workflow.state.get_album_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
+        
+        # _opus_output/アルバム名/
+        opus_base = os.path.join(self.album_folder, self.workflow.state.get_path("opusOutput"))
+        opus_dir = os.path.join(opus_base, sanitized_album_name)
+        
         if not os.path.isdir(opus_dir):
-            QMessageBox.warning(self, "未取り込み", "_opus_output が見つかりません。先に Step5 を完了してください。")
+            QMessageBox.warning(self, "未取り込み", f"_opus_output/{sanitized_album_name} が見つかりません。先に Step5 を完了してください。")
             return
         ok_cnt = 0
         err_cnt = 0
@@ -266,18 +283,34 @@ class Step6ArtworkPanel(QWidget):
 
     def on_open_mp3tag_aac(self):
         if not self.album_folder or not self.workflow.state: return
-        aac_dir = os.path.join(self.album_folder, self.workflow.state.get_path("aacOutput"))
+        
+        # アルバム名を取得してサニタイズ
+        album_name = self.workflow.state.get_album_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
+        
+        # _aac_output/アルバム名/
+        aac_base = os.path.join(self.album_folder, self.workflow.state.get_path("aacOutput"))
+        aac_dir = os.path.join(aac_base, sanitized_album_name)
+        
         if not os.path.isdir(aac_dir):
-            QMessageBox.warning(self, "未取り込み", "_aac_output がありません。Step4 で取り込み後に実行してください。")
+            QMessageBox.warning(self, "未取り込み", f"_aac_output/{sanitized_album_name} がありません。Step4 で取り込み後に実行してください。")
             return
         self._launch_mp3tag(aac_dir)
 
     def on_open_mp3tag_opus(self):
         """Opus 出力フォルダで Mp3tag を開く"""
         if not self.album_folder or not self.workflow.state: return
-        opus_dir = os.path.join(self.album_folder, self.workflow.state.get_path("opusOutput"))
+        
+        # アルバム名を取得してサニタイズ
+        album_name = self.workflow.state.get_album_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
+        
+        # _opus_output/アルバム名/
+        opus_base = os.path.join(self.album_folder, self.workflow.state.get_path("opusOutput"))
+        opus_dir = os.path.join(opus_base, sanitized_album_name)
+        
         if not os.path.isdir(opus_dir):
-            QMessageBox.warning(self, "未取り込み", "_opus_output がありません。Step5 で取り込み後に実行してください。")
+            QMessageBox.warning(self, "未取り込み", f"_opus_output/{sanitized_album_name} がありません。Step5 で取り込み後に実行してください。")
             return
         self._launch_mp3tag(opus_dir)
 
@@ -328,3 +361,20 @@ class Step6ArtworkPanel(QWidget):
             "Step 6 の処理は不要です。\n"
             "「Step 6 完了」ボタンを押してスキップしてください。"
         )
+    
+    def _sanitize_foldername(self, name: str) -> str:
+        """フォルダ名に使用できない文字を全角等に置換"""
+        replacements = {
+            '\\': '¥',
+            '/': '／',
+            ':': '：',
+            '*': '＊',
+            '?': '？',
+            '"': '"',
+            '<': '＜',
+            '>': '＞',
+            '|': '｜'
+        }
+        for char, replacement in replacements.items():
+            name = name.replace(char, replacement)
+        return name

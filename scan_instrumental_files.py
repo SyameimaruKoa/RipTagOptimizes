@@ -2,11 +2,29 @@
 # -*- coding: utf-8 -*-
 """
 既存のインストゥルメンタルファイルをスキャンして state.json を更新するツール
-_flac_src フォルダ内の (Inst).flac ファイルを検出し、対応する元トラックに紐づけます。
+_flac_src/アルバム名 フォルダ内の (Inst).flac ファイルを検出し、対応する元トラックに紐づけます。
 """
 import os
 import json
 import sys
+
+
+def _sanitize_foldername(name: str) -> str:
+    """フォルダ名に使用できない文字を全角等に置換"""
+    replacements = {
+        '\\': '¥',
+        '/': '／',
+        ':': '：',
+        '*': '＊',
+        '?': '？',
+        '"': '"',
+        '<': '＜',
+        '>': '＞',
+        '|': '｜'
+    }
+    for char, replacement in replacements.items():
+        name = name.replace(char, replacement)
+    return name
 
 
 def scan_instrumental_files(album_folder):
@@ -17,16 +35,10 @@ def scan_instrumental_files(album_folder):
         album_folder: アルバムフォルダのパス
     """
     state_path = os.path.join(album_folder, "state.json")
-    flac_src_dir = os.path.join(album_folder, "_flac_src")
     
     # state.json の存在確認
     if not os.path.exists(state_path):
         print(f"[ERROR] state.json が見つかりません: {state_path}")
-        return False
-    
-    # _flac_src フォルダの存在確認
-    if not os.path.exists(flac_src_dir):
-        print(f"[INFO] _flac_src フォルダが見つかりません: {flac_src_dir}")
         return False
     
     # state.json を読み込み
@@ -37,11 +49,23 @@ def scan_instrumental_files(album_folder):
         print(f"[ERROR] state.json の読み込みに失敗: {e}")
         return False
     
-    # _flac_src 内のファイル一覧を取得
+    # アルバム名を取得してサニタイズ
+    album_name = state.get("albumName", "Unknown")
+    sanitized_album_name = _sanitize_foldername(album_name)
+    
+    # _flac_src/アルバム名 フォルダ
+    flac_src_dir = os.path.join(album_folder, "_flac_src", sanitized_album_name)
+    
+    # _flac_src/アルバム名 フォルダの存在確認
+    if not os.path.exists(flac_src_dir):
+        print(f"[INFO] _flac_src/{sanitized_album_name} フォルダが見つかりません: {flac_src_dir}")
+        return False
+    
+    # _flac_src/アルバム名 内のファイル一覧を取得
     try:
         all_files = [f for f in os.listdir(flac_src_dir) if f.endswith('.flac')]
     except Exception as e:
-        print(f"[ERROR] _flac_src フォルダの読み込みに失敗: {e}")
+        print(f"[ERROR] _flac_src/{sanitized_album_name} フォルダの読み込みに失敗: {e}")
         return False
     
     # (Inst).flac ファイルを抽出
