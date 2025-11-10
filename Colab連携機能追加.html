@@ -49,126 +49,56 @@
 
         .section {
             margin-bottom: 35px;
-            border-bottom: 1px solid #eee;
-            padding-bottom: 25px;
-        }
 
-        .section:last-child {
-            border-bottom: none;
-            margin-bottom: 0;
-            padding-bottom: 0;
-        }
-
-        .section h2 {
-            font-size: 22px;
-            color: #2c5282;
-            /* 濃い青 */
-            border-bottom: 2px solid #e0e7ff;
-            padding-bottom: 8px;
-            margin-top: 0;
-        }
-
-        .section h3 {
-            font-size: 18px;
-            color: #2d3748;
-            /* 暗いグレー */
-            margin-top: 25px;
-        }
-
-        code.filepath {
-            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
-            background-color: #f3f4f6;
-            color: #4b5563;
-            padding: 4px 8px;
-            border-radius: 5px;
-            font-size: 0.9em;
-            border: 1px solid #e5e7eb;
-        }
-
-        pre {
-            background-color: #f9fafb;
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            padding: 16px;
-            overflow-x: auto;
-            font-size: 14px;
-        }
-
-        code.block {
-            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
-        }
-
-        .note {
-            background-color: #fefcbf;
-            /* 薄い黄色 */
-            border: 1px solid #f9e18f;
-            border-left-width: 5px;
-            border-left-color: #f7b731;
-            /* 黄色 */
-            padding: 15px 20px;
-            margin-top: 15px;
-            border-radius: 4px;
-        }
-
-        .note strong {
-            color: #d97706;
-            /* 暗いオレンジ */
-        }
-
-        .colab-link {
-            font-weight: bold;
-            color: #2563eb;
-            /* 鮮やかな青 */
-            text-decoration: none;
-        }
-
-        .colab-link:hover {
-            text-decoration: underline;
-        }
+            < !-- Removed: Google Colab関連のドキュメントはプロジェクト方針により削除されました -->< !DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>RipTagOptimize ドキュメント（Colab記述削除済み）</title><style>body {
+                font-family: sans-serif;
+                line-height: 1.6;
+                padding: 24px;
+            }
     </style>
-</head>
+    <div class="container">
 
 <body>
+    <h1>このドキュメントは整理のため内容を削除しました</h1>
+    <p>Google Colab に関する説明は本プロジェクトから撤去されました。必要な場合は Step 2 の画面から外部環境を開いて実行してください。</p>
+</body>
+<h1>RipTagOptimize 実装指示書</h1>
+<p><strong>プロジェクト:</strong> Google Colab 連携機能の追加</p>
+</header>
 
-    <div class="container">
-        <header>
-            <h1>RipTagOptimize 実装指示書</h1>
-            <p><strong>プロジェクト:</strong> Google Colab 連携機能の追加</p>
-        </header>
+<div class="content">
 
-        <div class="content">
+    <div class="section" id="overview">
+        <h2>1. 概要</h2>
+        <p>
+            本指示書は、<code>RipTagOptimize</code> プロジェクトにおいて、Google Colab を利用した
+            Demucs（ボーカル除去）処理への誘導を強化するための改修を指示するものである。
+        </p>
+        <p>
+            ローカルPCでの Demucs 実行は、NVIDIA GPU の要件や環境構築の複雑さから、多くのユーザーにとって障壁となっている。この問題を解決するため、<code>README.md</code>
+            および GUI 内部に、わっちが用意した <a
+                href="https://colab.research.google.com/gist/SyameimaruKoa/8b9c42bd3ddccfe8512376e8a43a7633/hybrid-demucs-music-source-separation.ipynb"
+                class="colab-link" target="_blank">ハイブリッド Demucs Colab ノートブック</a> へのリンクと利用手順を明記し、ユーザーを積極的に誘導する。
+        </p>
+    </div>
 
-            <div class="section" id="overview">
-                <h2>1. 概要</h2>
-                <p>
-                    本指示書は、<code>RipTagOptimize</code> プロジェクトにおいて、Google Colab を利用した
-                    Demucs（ボーカル除去）処理への誘導を強化するための改修を指示するものである。
-                </p>
-                <p>
-                    ローカルPCでの Demucs 実行は、NVIDIA GPU の要件や環境構築の複雑さから、多くのユーザーにとって障壁となっている。この問題を解決するため、<code>README.md</code>
-                    および GUI 内部に、わっちが用意した <a
-                        href="https://colab.research.google.com/gist/SyameimaruKoa/8b9c42bd3ddccfe8512376e8a43a7633/hybrid-demucs-music-source-separation.ipynb"
-                        class="colab-link" target="_blank">ハイブリッド Demucs Colab ノートブック</a> へのリンクと利用手順を明記し、ユーザーを積極的に誘導する。
-                </p>
-            </div>
+    <div class="section" id="change-readme">
+        <h2>2. 変更指示: README.md</h2>
+        <p>
+            プロジェクトの顔である <code>README.md</code> に、Colab を使ったワークフローを（推奨事項として）明記する。
+        </p>
 
-            <div class="section" id="change-readme">
-                <h2>2. 変更指示: README.md</h2>
-                <p>
-                    プロジェクトの顔である <code>README.md</code> に、Colab を使ったワークフローを（推奨事項として）明記する。
-                </p>
+        <h3>対象ファイル</h3>
+        <p><code
+                class="filepath">syameimarukoa/riptagoptimize/RipTagOptimize-06c2699914871d18ec5cb5a61c8b8996ebd7f506/README.md</code>
+        </p>
 
-                <h3>対象ファイル</h3>
-                <p><code
-                        class="filepath">syameimarukoa/riptagoptimize/RipTagOptimize-06c2699914871d18ec5cb5a61c8b8996ebd7f506/README.md</code>
-                </p>
+        <h3>変更内容</h3>
+        <p>
+            「<code>## （オプション）Demucsによるボーカル除去</code>」セクションを、以下のように全面的に書き換えること。（これはMarkdown形式のままじゃ）
+        </p>
 
-                <h3>変更内容</h3>
-                <p>
-                    「<code>## （オプション）Demucsによるボーカル除去</code>」セクションを、以下のように全面的に書き換えること。（これはMarkdown形式のままじゃ）
-                </p>
-
-                <pre><code class="block">
+        <pre><code class="block">
 ## （オプション）Demucsによるボーカル除去
 
 RipTagOptimize は、Demucs（AI音源分離）で生成された `no_vocals.wav` （インスト音源）を検出し、タグ付けやエンコードの対象とします。
@@ -189,24 +119,24 @@ Step 1で `no_vocals.wav` が未検出の場合、Step 2タブでローカルPC�
 - 処理対象は `*.wav`, `*.flac`, `*.mp3`, `*.m4a` です。
 - 実行にはNVIDIA GPU（CUDA）が強く推奨されます。
 </code></pre>
-            </div>
+    </div>
 
-            <div class="section" id="change-step1">
-                <h2>3. 変更指示: Step 1 (インポート) 画面</h2>
-                <p>
-                    ユーザーが最初に触れる Step 1 の画面に、Colab 実行のヒントを表示する。
-                </p>
+    <div class="section" id="change-step1">
+        <h2>3. 変更指示: Step 1 (インポート) 画面</h2>
+        <p>
+            ユーザーが最初に触れる Step 1 の画面に、Colab 実行のヒントを表示する。
+        </p>
 
-                <h3>対象ファイル</h3>
-                <p><code
-                        class="filepath">syameimarukoa/riptagoptimize/RipTagOptimize-06c2699914871d18ec5cb5a61c8b8996ebd7f506/gui/step_panels/step1_import.py</code>
-                </p>
+        <h3>対象ファイル</h3>
+        <p><code
+                class="filepath">syameimarukoa/riptagoptimize/RipTagOptimize-06c2699914871d18ec5cb5a61c8b8996ebd7f506/gui/step_panels/step1_import.py</code>
+        </p>
 
-                <h3>変更内容 1/2: import の追加</h3>
-                <p>
-                    ファイルの先頭（<code>import</code>セクション）に <code>QLabel</code> を追加する。
-                </p>
-                <pre><code class="block">
+        <h3>変更内容 1/2: import の追加</h3>
+        <p>
+            ファイルの先頭（<code>import</code>セクション）に <code>QLabel</code> を追加する。
+        </p>
+        <pre><code class="block">
 import os
 import glob
 from PySide6.QtWidgets import (
@@ -216,13 +146,13 @@ from PySide6.QtWidgets import (
 # (以下略)
 </code></pre>
 
-                <h3>変更内容 2/2: UIの追加</h3>
-                <p>
-                    <code>Step1ImportPanel</code> クラスの <code>init_ui</code>
-                    メソッド内、<code>layout.addWidget(self.folder_select_button)</code>
-                    の直後に、以下のコードブロックを挿入する。（HTMLタグはエスケープ済みじゃ）
-                </p>
-                <pre><code class="block">
+        <h3>変更内容 2/2: UIの追加</h3>
+        <p>
+            <code>Step1ImportPanel</code> クラスの <code>init_ui</code>
+            メソッド内、<code>layout.addWidget(self.folder_select_button)</code>
+            の直後に、以下のコードブロックを挿入する。（HTMLタグはエスケープ済みじゃ）
+        </p>
+        <pre><code class="block">
         # (既存コード)
         layout.addWidget(self.folder_select_button)
 
@@ -249,24 +179,24 @@ from PySide6.QtWidgets import (
         layout.addWidget(h_line_2)
         # (既存コード)
 </code></pre>
-            </div>
+    </div>
 
-            <div class="section" id="change-step2">
-                <h2>4. 変更指示: Step 2 (Demucs) 画面</h2>
-                <p>
-                    ローカル実行画面である Step 2 にて、Colab の利用を「強く推奨」するメッセージを表示し、ローカル実行が上級者向けであることを明記する。
-                </p>
+    <div class="section" id="change-step2">
+        <h2>4. 変更指示: Step 2 (Demucs) 画面</h2>
+        <p>
+            ローカル実行画面である Step 2 にて、Colab の利用を「強く推奨」するメッセージを表示し、ローカル実行が上級者向けであることを明記する。
+        </p>
 
-                <h3>対象ファイル</h3>
-                <p><code
-                        class="filepath">syameimarukoa/riptagoptimize/RipTagOptimize-06c2699914871d18ec5cb5a61c8b8996ebd7f506/gui/step_panels/step2_demucs.py</code>
-                </p>
+        <h3>対象ファイル</h3>
+        <p><code
+                class="filepath">syameimarukoa/riptagoptimize/RipTagOptimize-06c2699914871d18ec5cb5a61c8b8996ebd7f506/gui/step_panels/step2_demucs.py</code>
+        </p>
 
-                <h3>変更内容 1/2: import の追加</h3>
-                <p>
-                    ファイルの先頭（<code>import</code>セクション）に <code>QLabel</code> を追加する。
-                </p>
-                <pre><code class="block">
+        <h3>変更内容 1/2: import の追加</h3>
+        <p>
+            ファイルの先頭（<code>import</code>セクション）に <code>QLabel</code> を追加する。
+        </p>
+        <pre><code class="block">
 from PySide6.QtWidgets import (
     QPushButton, QVBoxLayout, QCheckBox,
     QLabel  # &lt;--- これを追加
@@ -274,14 +204,14 @@ from PySide6.QtWidgets import (
 # (以下略)
 </code></pre>
 
-                <h3>変更内容 2/2: UIの追加</h3>
-                <p>
-                    <code>Step2DemucsPanel</code> クラスの <code>init_ui</code>
-                    メソッド内、<code>layout.addWidget(self.demucs_status_label)</code>
-                    の直後、<code>self.run_demucs_button = ...</code> の直前に、以下のコードブロックを挿入する。（HTMLタグはエスケープ済みじゃ）
-                </p>
+        <h3>変更内容 2/2: UIの追加</h3>
+        <p>
+            <code>Step2DemucsPanel</code> クラスの <code>init_ui</code>
+            メソッド内、<code>layout.addWidget(self.demucs_status_label)</code>
+            の直後、<code>self.run_demucs_button = ...</code> の直前に、以下のコードブロックを挿入する。（HTMLタグはエスケープ済みじゃ）
+        </p>
 
-                <pre><code class="block">
+        <pre><code class="block">
         # (既存コード)
         self.demucs_status_label.setWordWrap(True)
         layout.addWidget(self.demucs_status_label)
@@ -319,10 +249,10 @@ from PySide6.QtWidgets import (
         self.run_demucs_button = QPushButton("ローカルPCでDemucsを実行")
         # (既存コード)
 </code></pre>
-            </div>
-
-        </div>
     </div>
+
+</div>
+</div>
 
 </body>
 

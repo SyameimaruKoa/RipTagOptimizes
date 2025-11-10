@@ -7,7 +7,8 @@ from PySide6.QtWidgets import (
     QLabel, QFileDialog, QMessageBox, QListWidget,
     QListWidgetItem, QCheckBox
 )
-from PySide6.QtCore import Signal, Qt
+from PySide6.QtCore import Signal, Qt, QUrl
+from PySide6.QtGui import QDesktopServices
 
 from logic.config_manager import ConfigManager
 from logic.workflow_manager import WorkflowManager
@@ -47,35 +48,7 @@ class Step2DemucsPanel(QWidget):
         
         layout.addSpacing(10)
         
-        # --- ▼ Colab誘導の追加 ▼ ---
-        colab_info_label = QLabel(
-            '<h3>🚀 Google Colabでの実行を推奨します</h3>'
-            'ローカル（このPC）でのDemucs実行は、NVIDIA GPU搭載PCでのみ動作し、環境設定も必要です。<br><br>'
-            '<b>スペックや設定に不安がある場合は、Colab（無料）の利用を強く推奨します:</b><br>'
-            '1. <a href="https://colab.research.google.com/gist/SyameimaruKoa/8b9c42bd3ddccfe8512376e8a43a7633">ハイブリッド Demucs Colab を開く</a><br>'
-            '2. Colab側で <code>RipTagOptimize_mode = True</code> に設定して実行する。<br>'
-            '3. 処理後にZIPをダウンロードし、解凍したフォルダを <b>Step 1</b> で指定し直してください。',
-            self
-        )
-        colab_info_label.setOpenExternalLinks(True)
-        colab_info_label.setStyleSheet(
-            "font-size: 11px; "
-            "padding: 12px; "
-            "margin-top: 5px; "
-            "margin-bottom: 5px; "
-            "background-color: #f0f9ff; "
-            "border: 1px solid #bcecfd; "
-            "border-left-width: 5px; "
-            "border-left-color: #38bdf8; "
-            "border-radius: 6px;"
-        )
-        layout.addWidget(colab_info_label)
-
-        # --- (区切り線) ---
-        local_run_label = QLabel("<b>または、ローカルで実行（上級者向け）:</b>", self)
-        local_run_label.setStyleSheet("margin-top: 10px; font-size: 12px;")
-        layout.addWidget(local_run_label)
-        # --- ▲ Colab誘導の追加 ▲ ---
+        # Colab誘導テキストは不要になったため削除し、代替としてリンクボタンのみを用意
 
         # トラックリスト（チェックボックス式）
         list_label = QLabel("<b>処理対象の曲を選択 (チェック):</b>")
@@ -122,6 +95,13 @@ class Step2DemucsPanel(QWidget):
         self.demucs_button.setEnabled(False)
         self.demucs_button.clicked.connect(self.on_demucs_execute)
         action_layout.addWidget(self.demucs_button)
+
+        # Colabリンクボタン（Demucs外部実行用サポート）
+        self.colab_button = QPushButton("Colabを開く")
+        self.colab_button.setToolTip("推奨: Google Colab上でDemucsを実行します")
+        self.colab_button.setEnabled(False)
+        self.colab_button.clicked.connect(self.on_open_colab)
+        action_layout.addWidget(self.colab_button)
         
         self.completed_button = QPushButton("Demucs完了")
         self.completed_button.setEnabled(False)
@@ -178,6 +158,7 @@ class Step2DemucsPanel(QWidget):
         
         self.demucs_button.setEnabled(True)
         self.open_folder_button.setEnabled(True)
+        self.colab_button.setEnabled(True)
     
     def on_item_changed(self, item: QListWidgetItem):
         """チェック状態が変更されたときに state.json に保存"""
@@ -297,6 +278,13 @@ class Step2DemucsPanel(QWidget):
         
         # 完了ボタンを有効化
         self.completed_button.setEnabled(True)
+
+    def on_open_colab(self):
+        """Colabリンクを開く"""
+        # 仕様: 指定されたハイブリッド Demucs Colab へのリンクを既定ブラウザで開く
+        url = QUrl("https://colab.research.google.com/gist/SyameimaruKoa/8b9c42bd3ddccfe8512376e8a43a7633")
+        if not QDesktopServices.openUrl(url):
+            QMessageBox.warning(self, "エラー", "ブラウザでColabリンクを開けませんでした。")
     
     def on_demucs_completed(self):
         """Demucs完了ボタン"""
