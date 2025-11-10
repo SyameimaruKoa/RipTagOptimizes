@@ -286,10 +286,17 @@ class Step4AacPanel(QWidget):
         got = 0
         if os.path.exists(dst):
             got = len([f for f in os.listdir(dst) if f.lower().endswith('.m4a')])
-        total = 0
+        
+        # 期待ファイル数をカウント（ユニークなファイル名のみ）
+        expected_files = set()
         for t in self.workflow.state.get_tracks():
-            if t.get("finalFile"): total += 1
-            if t.get("instrumentalFile"): total += 1
+            final = t.get("finalFile")
+            inst = t.get("instrumentalFile")
+            if final:
+                expected_files.add(final)
+            if inst:
+                expected_files.add(inst)
+        total = len(expected_files)
         
         if got < total:
             # ファイル数不足: 確認ダイアログで警告

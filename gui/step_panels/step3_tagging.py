@@ -438,19 +438,8 @@ class Step3TaggingPanel(QWidget):
                     inst_display_name  # 生のファイル名を表示
                 )
                 
-                # インストファイルを独立したトラックとしても追加（state.jsonに既に存在しない場合のみ）
-                if inst_partner not in existing_original_files:
-                    new_track = {
-                        "id": f"track_{len(tracks) + 1:03d}",
-                        "originalFile": inst_partner,
-                        "finalFile": inst_final_filename,
-                        "currentFile": inst_partner,
-                        "demucsTarget": False,
-                        "isInstrumental": True,
-                        "hasInstrumental": False
-                    }
-                    tracks.append(new_track)
-                    print(f"[DEBUG] 新規インストトラックを追加: {inst_partner}")
+                # instrumentalFileとして紐づいたファイルは独立トラックとして追加しない
+                # （重複登録を防ぐため）
             else:
                 # new_file 自体が Inst の場合はバッジ表示、それ以外は通常表示
                 track["currentFile"] = new_file
@@ -485,6 +474,50 @@ class Step3TaggingPanel(QWidget):
                 # 表示に追加
                 self._append_mapping_row_inst_only(flac_file, final_filename)
                 print(f"[DEBUG] 未処理の新規インストトラックを追加: {flac_file} -> {final_filename}")
+        
+        # 独立インストトラックのトラック番号を再採番
+        # ボーカル入りトラック（isInstrumental=False）の後に連番で配置
+        
+        import re
+        
+        # トラックを分類
+        vocal_tracks = []  # ボーカル入りトラック
+        independent_inst_tracks = []  # 独立インストトラック
+        
+        for track in tracks:
+            is_inst = track.get("isInstrumental", False)
+            has_final = bool(track.get("finalFile"))
+            
+            if not has_final:
+                continue
+            
+            if is_inst:
+                independent_inst_tracks.append(track)
+            else:
+                vocal_tracks.append(track)
+        
+        # 独立インストトラックのトラック番号を再採番
+        if independent_inst_tracks:
+            next_track_num = len(vocal_tracks) + 1  # ボーカル入りトラックの後から
+            
+            for inst_track in independent_inst_tracks:
+                final_file = inst_track.get("finalFile", "")
+                if not final_file:
+                    continue
+                
+                # 既存のトラック番号を抽出
+                m = re.match(r"^(?:Disc \d+-)?(\d{2,3})\s+(.+)$", final_file)
+                if m:
+                    old_num = m.group(1)
+                    title_part = m.group(2)
+                    
+                    # 新しいトラック番号を生成
+                    new_num = str(next_track_num).zfill(2)
+                    new_final_file = f"{new_num} {title_part}"
+                    
+                    inst_track["finalFile"] = new_final_file
+                    print(f"[DEBUG] 独立インストトラックのトラック番号を再採番: {old_num} -> {new_num} ({title_part})")
+                    next_track_num += 1
         
         # state.json に保存
         self.workflow.state.state["tracks"] = tracks
