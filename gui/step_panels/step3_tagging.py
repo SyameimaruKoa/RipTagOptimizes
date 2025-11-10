@@ -910,3 +910,20 @@ class Step3TaggingPanel(QWidget):
             self.mapping_widget.setVisible(True)
             
             QMessageBox.information(self, "完了", "ファイル紐づけを手動で更新しました。")
+    
+    def _sanitize_foldername(self, name: str) -> str:
+        """フォルダ名に使用できない文字を全角等に置換"""
+        replacements = {
+            '\\': '¥',
+            '/': '／',
+            ':': '：',
+            '*': '＊',
+            '?': '？',
+            '"': '"',
+            '<': '＜',
+            '>': '＞',
+            '|': '｜'
+        }
+        for char, replacement in replacements.items():
+            name = name.replace(char, replacement)
+        return name
