@@ -188,6 +188,9 @@ class Step6ArtworkPanel(QWidget):
         self.lbl_result.setText(f"生成: {os.path.relpath(p1, self.album_folder)}, {os.path.relpath(p2, self.album_folder)}")
         if self.workflow.state:
             self.workflow.state.set_artwork(True)
+        
+        # 最適化完了後、自動的にAAC/Opusに埋め込む
+        self._auto_embed_artwork()
 
     def _cover_jpg(self) -> Optional[str]:
         if not self.album_folder:
@@ -200,6 +203,69 @@ class Step6ArtworkPanel(QWidget):
             return None
         p = os.path.join(self.album_folder, "_artwork_resized", "cover.webp")
         return p if os.path.exists(p) else None
+
+    def _auto_embed_artwork(self):
+        """最適化完了後に自動的にAAC/Opusへアートワークを埋め込む"""
+        if not self.album_folder or not self.workflow.state:
+            return
+        
+        results = []
+        
+        # AAC に JPG を埋め込み
+        jpg_img = self._cover_jpg()
+        if jpg_img:
+            album_name = self.workflow.state.get_album_name()
+            sanitized_album_name = self._sanitize_foldername(album_name)
+            aac_base = os.path.join(self.album_folder, self.workflow.state.get_path("aacOutput"))
+            aac_dir = os.path.join(aac_base, sanitized_album_name)
+            
+            if os.path.isdir(aac_dir):
+                aac_ok = 0
+                aac_err = 0
+                for name in os.listdir(aac_dir):
+                    if not name.lower().endswith('.m4a'):
+                        continue
+                    path = os.path.join(aac_dir, name)
+                    ok, err = ah.embed_artwork_to_mp4(path, jpg_img)
+                    if ok:
+                        aac_ok += 1
+                    else:
+                        aac_err += 1
+                        print(f"[WARN] AAC embed failed: {name}: {err}")
+                results.append(f"AAC (JPG): {aac_ok}成功 / {aac_err}失敗")
+            else:
+                print(f"[INFO] AAC出力フォルダが存在しません: {aac_dir}")
+        
+        # Opus に WebP を埋め込み
+        webp_img = self._cover_webp()
+        if webp_img:
+            album_name = self.workflow.state.get_album_name()
+            sanitized_album_name = self._sanitize_foldername(album_name)
+            opus_base = os.path.join(self.album_folder, self.workflow.state.get_path("opusOutput"))
+            opus_dir = os.path.join(opus_base, sanitized_album_name)
+            
+            if os.path.isdir(opus_dir):
+                opus_ok = 0
+                opus_err = 0
+                for name in os.listdir(opus_dir):
+                    if not name.lower().endswith('.opus'):
+                        continue
+                    path = os.path.join(opus_dir, name)
+                    ok, err = ah.embed_artwork_to_opus(path, webp_img)
+                    if ok:
+                        opus_ok += 1
+                    else:
+                        opus_err += 1
+                        print(f"[WARN] Opus embed failed: {name}: {err}")
+                results.append(f"Opus (WebP): {opus_ok}成功 / {opus_err}失敗")
+            else:
+                print(f"[INFO] Opus出力フォルダが存在しません: {opus_dir}")
+        
+        # 結果をユーザーに通知
+        if results:
+            result_msg = "\n".join(results)
+            QMessageBox.information(self, "アートワーク埋め込み完了", 
+                                  f"最適化ファイルを自動埋め込みしました:\n\n{result_msg}")
 
     def on_embed_aac(self):
         if not self.album_folder or not self.workflow.state:
