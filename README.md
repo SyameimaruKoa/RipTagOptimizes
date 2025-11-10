@@ -95,6 +95,26 @@ LAUNCH_GUI.bat
 
 ※ Step 2未満には戻せません
 
+## （オプション）Demucsによるボーカル除去
+
+RipTagOptimize は、Demucs（AI音源分離）で生成された `no_vocals.wav` （インスト音源）を検出し、タグ付けやエンコードの対象とします。
+
+### 🚀 Google Colabでの実行（推奨）
+ローカルPCのスペック（特にNVIDIA GPU）に不安がある場合や、環境構築が難しい場合は、Google Colab（無料）でDemucsを実行するのが最も簡単で高速です。
+
+1.  **[こちら（ハイブリッド Demucs Colab）](https://colab.research.google.com/gist/SyameimaruKoa/8b9c42bd3ddccfe8512376e8a43a7633/hybrid-demucs-music-source-separation.ipynb) を開きます。**
+2.  指示に従って音楽ファイルをアップロードし、Demucsを実行します。
+3.  **重要:** Colabの「変更できるオプション」セルで、`RipTagOptimize_mode` にチェックを入れて `True` に設定してください。
+4.  処理が完了したら、`Option-3 / ダウンロード` セルで結果をZIPファイルとしてダウンロードします。
+5.  ダウンロードしたZIPを解凍し、そのフォルダ（`htdemucs_ft`など）をRipTagOptimizeのStep 1で指定します。
+
+### ローカル実行（上級者向け）
+Step 1で `no_vocals.wav` が未検出の場合、Step 2タブでローカルPCにインストールされたDemucsを実行することもできます。
+
+- `htdemucs_ft` モデル（v4）を使用します。
+- 処理対象は `*.wav`, `*.flac`, `*.mp3`, `*.m4a` です。
+- 実行にはNVIDIA GPU（CUDA）が強く推奨されます。
+
 ## ディレクトリ構造
 
 ```

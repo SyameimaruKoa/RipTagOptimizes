@@ -122,6 +122,27 @@ class Step1ImportPanel(QWidget):
         button_layout.addStretch()
         
         layout.addLayout(button_layout)
+        
+        # --- ▼ Colab誘導の追加 ▼ ---
+        colab_label = QLabel(
+            '💡 <b>ヒント:</b> まだボーカル除去が終わっていない場合、<br>'
+            '　 <a href="https://colab.research.google.com/gist/SyameimaruKoa/8b9c42bd3ddccfe8512376e8a43a7633">'
+            'Google Colab（無料）でDemucsを実行</a> してから、<br>'
+            '　 その出力フォルダ（htdemucs_ftなど）をここで指定するのがおすすめです。',
+            self
+        )
+        colab_label.setOpenExternalLinks(True)
+        colab_label.setStyleSheet(
+            "font-size: 11px; "
+            "padding: 8px 12px; "
+            "margin-top: 8px; "
+            "background-color: #f1f5f9; "
+            "border: 1px solid #e2e8f0; "
+            "border-radius: 6px;"
+        )
+        layout.addWidget(colab_label)
+        # --- ▲ Colab誘導の追加 ▲ ---
+        
         layout.addStretch()
         
         # 選択されたフォルダのリスト

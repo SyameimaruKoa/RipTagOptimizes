@@ -46,6 +46,36 @@ class Step2DemucsPanel(QWidget):
         layout.addWidget(desc)
         
         layout.addSpacing(10)
+        
+        # --- ▼ Colab誘導の追加 ▼ ---
+        colab_info_label = QLabel(
+            '<h3>🚀 Google Colabでの実行を推奨します</h3>'
+            'ローカル（このPC）でのDemucs実行は、NVIDIA GPU搭載PCでのみ動作し、環境設定も必要です。<br><br>'
+            '<b>スペックや設定に不安がある場合は、Colab（無料）の利用を強く推奨します:</b><br>'
+            '1. <a href="https://colab.research.google.com/gist/SyameimaruKoa/8b9c42bd3ddccfe8512376e8a43a7633">ハイブリッド Demucs Colab を開く</a><br>'
+            '2. Colab側で <code>RipTagOptimize_mode = True</code> に設定して実行する。<br>'
+            '3. 処理後にZIPをダウンロードし、解凍したフォルダを <b>Step 1</b> で指定し直してください。',
+            self
+        )
+        colab_info_label.setOpenExternalLinks(True)
+        colab_info_label.setStyleSheet(
+            "font-size: 11px; "
+            "padding: 12px; "
+            "margin-top: 5px; "
+            "margin-bottom: 5px; "
+            "background-color: #f0f9ff; "
+            "border: 1px solid #bcecfd; "
+            "border-left-width: 5px; "
+            "border-left-color: #38bdf8; "
+            "border-radius: 6px;"
+        )
+        layout.addWidget(colab_info_label)
+
+        # --- (区切り線) ---
+        local_run_label = QLabel("<b>または、ローカルで実行（上級者向け）:</b>", self)
+        local_run_label.setStyleSheet("margin-top: 10px; font-size: 12px;")
+        layout.addWidget(local_run_label)
+        # --- ▲ Colab誘導の追加 ▲ ---
 
         # トラックリスト（チェックボックス式）
         list_label = QLabel("<b>処理対象の曲を選択 (チェック):</b>")
