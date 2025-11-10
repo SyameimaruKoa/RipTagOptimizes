@@ -242,6 +242,9 @@ class MainWindow(QMainWindow):
             print("[DEBUG] album_folder is None")
             return
         
+        # 絶対パスに変換（相対パスの場合）
+        album_folder = os.path.abspath(album_folder)
+        
         # 同一アルバムの自動リフレッシュによる再選択は無視して選択状態を保持
         if self.current_album_folder == album_folder and self.workflow and self.workflow.state:
             print("[DEBUG] Same album re-selected on refresh; skipping reload")

@@ -112,9 +112,13 @@ class ConfigManager:
         return None
     
     def get_directory(self, dir_name: str) -> str:
-        """ディレクトリパスを取得（環境変数展開済み）"""
+        """ディレクトリパスを取得（環境変数展開済み、絶対パスに変換）"""
         path = self.config.get('Paths', dir_name, fallback='')
-        return self.expand_path(path)
+        expanded = self.expand_path(path)
+        # 相対パスの場合は絶対パスに変換
+        if expanded:
+            expanded = os.path.abspath(expanded)
+        return expanded
     
     def get_default_directory(self, key: str, fallback: str = "") -> str:
         """初期ディレクトリパスを取得（環境変数展開済み）
