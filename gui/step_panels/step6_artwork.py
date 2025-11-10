@@ -156,7 +156,13 @@ class Step6ArtworkPanel(QWidget):
     def on_pick_image(self):
         if not self.album_folder:
             return
-        path, _ = QFileDialog.getOpenFileName(self, "画像選択", self.album_folder, "画像 (*.jpg *.jpeg *.png *.webp)")
+        
+        # 初期ディレクトリ（config.iniから取得、なければアルバムフォルダ）
+        default_dir = self.config.get_default_directory('artwork_select')
+        if not default_dir or not os.path.isdir(default_dir):
+            default_dir = self.album_folder
+        
+        path, _ = QFileDialog.getOpenFileName(self, "画像選択", default_dir, "画像 (*.jpg *.jpeg *.png *.webp)")
         if path:
             self.source_image = path
             self.lbl_source.setText(f"選択: {os.path.basename(path)}")

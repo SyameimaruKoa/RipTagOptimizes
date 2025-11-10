@@ -288,11 +288,16 @@ class Step2DemucsPanel(QWidget):
     
     def on_demucs_completed(self):
         """Demucs完了ボタン"""
-        # Demucs出力フォルダを選択
+        # Demucs出力フォルダを選択（初期位置はconfig.iniから取得、なければダウンロードフォルダ）
+        default_dir = self.config.get_default_directory('demucs_output')
+        if not default_dir or not os.path.isdir(default_dir):
+            # フォールバック: ユーザーのダウンロードフォルダ
+            default_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+        
         folder = QFileDialog.getExistingDirectory(
             self,
             "Demucs出力フォルダを選択",
-            self.album_folder if self.album_folder else ""
+            default_dir
         )
         
         if not folder:

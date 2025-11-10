@@ -1,6 +1,12 @@
-# CD取り込み自動化ワークフロー GUI v1.0
+# CD取り込み自動化ワークフロー GUI v2.0
 
 音楽CDの取り込みから各種フォーマット変換、タグ付け、アートワーク処理、NAS転送までを一元管理するGUIアプリケーションです。
+
+**v2.0 主要アップデート:**
+- ✅ Demucs生成インストファイルの完全サポート
+- ✅ ファイル紐づけの自動検出機能強化
+- ✅ 環境変数対応による複数ユーザー環境サポート
+- ✅ ファイルダイアログの初期位置カスタマイズ機能
 
 ## ⚠️ 重要な注意事項
 
@@ -84,6 +90,34 @@ LAUNCH_GUI.bat
 - **ツールパス**: 各外部ツールの実行ファイルパス
 - **品質設定**: アートワークのJPEG/WebP品質、リサイズ幅
 - **Demucs設定**: 自動除外キーワード（動的追加・削除可能）
+
+#### 環境変数のサポート
+
+`config.ini`では、パス設定に環境変数を使用できます：
+
+```ini
+[Paths]
+winscp = %LOCALAPPDATA%\Programs\WinSCP\WinSCP.exe
+flac = %USERPROFILE%\OneDrive\CUIApplication\flac\flac.exe
+musiccenterdir = %USERPROFILE%\Music\Music Center
+
+[DefaultDirectories]
+demucs_output = %USERPROFILE%\Downloads
+aac_output = %USERPROFILE%\Downloads
+opus_output = %USERPROFILE%\Downloads
+artwork_select = %USERPROFILE%\Downloads
+```
+
+これにより、異なるユーザー名でも設定ファイルをそのまま使用できます。
+
+#### ファイルダイアログの初期位置設定
+
+各ステップのファイル選択ダイアログの初期位置は、`config.ini`の`[DefaultDirectories]`セクションで設定できます：
+
+- **demucs_output**: Demucs出力フォルダ選択の初期位置（デフォルト: ダウンロードフォルダ）
+- **aac_output**: MediaHuman変換後のAAC出力フォルダ選択の初期位置（デフォルト: ダウンロードフォルダ）
+- **opus_output**: foobar2000変換後のOpus出力フォルダ選択の初期位置（デフォルト: ダウンロードフォルダ）
+- **artwork_select**: アートワーク画像選択の初期位置（空欄の場合はアルバムフォルダ）
 
 ### ロールバック機能
 

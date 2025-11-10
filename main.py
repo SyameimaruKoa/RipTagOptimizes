@@ -6,6 +6,8 @@ CD取り込み自動化ワークフロー・マスターGUI
    使用は自己責任でお願いします。データの損失や破損が発生する可能性があるため、
    必ず重要なデータはバックアップしてからご使用ください。
 """
+__version__ = "2.0.0"
+
 import sys
 from PySide6.QtWidgets import QApplication, QMessageBox
 from gui.main_window import MainWindow
@@ -36,7 +38,7 @@ def check_required_directories(config: ConfigManager) -> tuple[bool, list[str]]:
 def main():
     """メイン関数"""
     app = QApplication(sys.argv)
-    app.setApplicationName("CD取り込み自動化ワークフロー")
+    app.setApplicationName(f"CD取り込み自動化ワークフロー v{__version__}")
     app.setOrganizationName("CDWorkflow")
     
     # 初回起動時の免責事項表示

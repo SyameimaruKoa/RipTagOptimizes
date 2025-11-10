@@ -167,7 +167,17 @@ class Step5OpusPanel(QWidget):
         """
         if not self.album_folder or not self.workflow.state:
             return
-        start_dir = init_dir or self.album_folder
+        
+        # 既定の初期位置（config.iniから取得）
+        if init_dir:
+            start_dir = init_dir
+        else:
+            default_dir = self.config.get_default_directory('opus_output')
+            if not default_dir or not os.path.isdir(default_dir):
+                # フォールバック: ダウンロードフォルダ
+                default_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+            start_dir = default_dir
+        
         src = QFileDialog.getExistingDirectory(self, "Opus出力フォルダを選択", start_dir)
         if not src:
             return

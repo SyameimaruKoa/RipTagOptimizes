@@ -168,12 +168,18 @@ class Step4AacPanel(QWidget):
         if not self.album_folder or not self.workflow.state:
             return
 
-        # 既定の初期位置（設定で変更可）
-        try:
-            default_dir = self.config.get_setting("ExternalOutputDir", r"C:\\Users\\kouki\\Videos\\エンコード済み")
-        except Exception:
-            default_dir = r"C:\\Users\\kouki\\Videos\\エンコード済み"
-        start_dir = init_dir or default_dir
+        # 既定の初期位置（config.iniから取得）
+        if init_dir:
+            start_dir = init_dir
+        else:
+            default_dir = self.config.get_default_directory('aac_output')
+            if not default_dir or not os.path.isdir(default_dir):
+                # フォールバック: ExternalOutputDir設定またはダウンロードフォルダ
+                default_dir = self.config.get_setting("ExternalOutputDir")
+                if not default_dir or not os.path.isdir(default_dir):
+                    default_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+            start_dir = default_dir
+        
         src = QFileDialog.getExistingDirectory(self, "MediaHuman の出力フォルダを選択", start_dir)
         if not src:
             return
