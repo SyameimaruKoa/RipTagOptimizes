@@ -61,25 +61,29 @@ class ConfigManager:
             return False
     
     def _create_default_config(self):
-        """デフォルト設定ファイルを作成"""
+        """デフォルト設定ファイルを作成（一般的なツールパスを自動検出）"""
+        # 一般的なツールのパスを自動検出
+        detected_paths = self._detect_tool_paths()
+        
         self.config['Paths'] = {
-            'Mp3Tag': '',
-            'MediaHuman': '',
-            'Foobar2000': '',
-            'WinSCP': '',
-            'Flac': '',
-            'Metaflac': '',
-            'Magick': '',
+            'Mp3tag': detected_paths.get('Mp3tag', ''),
+            'MediaHuman': detected_paths.get('MediaHuman', ''),
+            'Foobar2000': detected_paths.get('Foobar2000', ''),
+            'WinSCP': detected_paths.get('WinSCP', ''),
+            'Flac': detected_paths.get('Flac', ''),
+            'Metaflac': detected_paths.get('Metaflac', ''),
+            'Magick': detected_paths.get('Magick', ''),
+            'iTunes': detected_paths.get('iTunes', ''),
+            'FreeFileSync': detected_paths.get('FreeFileSync', ''),
+            'FreeFileSync_Config': '',
             'MusicCenterDir': '%USERPROFILE%\\Music\\Music Center',
             'WorkDir': './work',
-            'NasFlacDir': '',
-            'NasFlacDirSftp': '',
         }
         self.config['DefaultDirectories'] = {
             'demucs_output': '%USERPROFILE%\\Downloads',
-            'aac_output': '%USERPROFILE%\\Downloads',
-            'opus_output': '%USERPROFILE%\\Downloads',
-            'artwork_select': '',
+            'aac_output': '変換MediaHuman',
+            'opus_output': 'foobar2000',
+            'artwork_select': '%USERPROFILE%\\Downloads',
         }
         self.config['Settings'] = {
             'JpegQuality': '85',
@@ -91,7 +95,7 @@ class ConfigManager:
             'AcceptedDisclaimer': 'false',
         }
         self.config['Demucs'] = {
-            'SkipKeywords': 'instrumental, inst., (inst), -inst-, off vocal, off-vocal, offvocal, backing track, karaoke, voiceless, minus one',
+            'SkipKeywords': 'instrumental, inst., (inst), -inst-, off vocal, off-vocal, offvocal, backing track, karaoke, voiceless, minus one, game version, オリジナル・カラオケ, ソロ・リミックス, ドラマ, ボーナス・トラック, インスト, オフボーカル, オフボ, カラオケ, 歌無し',
         }
         self.config['Artwork'] = {
             'JpegQuality': '85',
@@ -99,6 +103,69 @@ class ConfigManager:
             'ResizeWidth': '600',
         }
         self.save()
+    
+    def _detect_tool_paths(self) -> dict:
+        """一般的なツールのパスを自動検出する
+        
+        Returns:
+            検出されたツール名とパスの辞書
+        """
+        detected = {}
+        
+        # 検索対象のツール定義（ツール名: [相対パスのリスト]）
+        tool_definitions = {
+            'Mp3tag': [
+                r'C:\Program Files\Mp3tag\Mp3tag.exe',
+                r'C:\Program Files (x86)\Mp3tag\Mp3tag.exe',
+            ],
+            'MediaHuman': [
+                r'C:\Program Files\MediaHuman\Audio Converter\MHAudioConverter.exe',
+                r'C:\Program Files (x86)\MediaHuman\Audio Converter\MHAudioConverter.exe',
+            ],
+            'Foobar2000': [
+                r'C:\Program Files\foobar2000\foobar2000.exe',
+                r'C:\Program Files (x86)\foobar2000\foobar2000.exe',
+            ],
+            'WinSCP': [
+                r'%LOCALAPPDATA%\Programs\WinSCP\WinSCP.exe',
+                r'C:\Program Files\WinSCP\WinSCP.exe',
+                r'C:\Program Files (x86)\WinSCP\WinSCP.exe',
+            ],
+            'iTunes': [
+                r'C:\Program Files\iTunes\iTunes.exe',
+                r'C:\Program Files (x86)\iTunes\iTunes.exe',
+            ],
+            'FreeFileSync': [
+                r'C:\Program Files\FreeFileSync\FreeFileSync.exe',
+                r'C:\Program Files (x86)\FreeFileSync\FreeFileSync.exe',
+            ],
+            'Magick': [
+                r'C:\Program Files\ImageMagick-7.1.2-Q16\magick.exe',
+                r'C:\Program Files\ImageMagick-7.1.1-Q16\magick.exe',
+                r'C:\Program Files\ImageMagick-7.1.0-Q16\magick.exe',
+                r'C:\Program Files (x86)\ImageMagick-7.1.2-Q16\magick.exe',
+            ],
+            'Flac': [
+                r'%USERPROFILE%\OneDrive\CUIApplication\flac\flac.exe',
+                r'C:\Program Files\FLAC\flac.exe',
+                r'C:\Program Files (x86)\FLAC\flac.exe',
+            ],
+            'Metaflac': [
+                r'%USERPROFILE%\OneDrive\CUIApplication\flac\metaflac.exe',
+                r'C:\Program Files\FLAC\metaflac.exe',
+                r'C:\Program Files (x86)\FLAC\metaflac.exe',
+            ],
+        }
+        
+        # 各ツールのパスを検索
+        for tool_name, paths in tool_definitions.items():
+            for path in paths:
+                expanded = self.expand_path(path)
+                if os.path.exists(expanded):
+                    detected[tool_name] = path  # 環境変数形式で保存
+                    break
+        
+        return detected
     
     def get_tool_path(self, tool_name: str) -> Optional[str]:
         """ツールのパスを取得（存在チェック付き）"""
@@ -137,6 +204,18 @@ class ConfigManager:
         """
         path = self.config.get('DefaultDirectories', key, fallback=fallback)
         return self.expand_path(path)
+    
+    def get_directory_name(self, key: str, fallback: str = "") -> str:
+        """初期ディレクトリのフォルダ名を取得（展開なし）
+        
+        Args:
+            key: DefaultDirectoriesセクションのキー名
+            fallback: デフォルト値
+        
+        Returns:
+            展開されていないフォルダ名（例: '変換MediaHuman'）
+        """
+        return self.config.get('DefaultDirectories', key, fallback=fallback)
     
     def get_setting(self, key: str, fallback=None):
         """設定値を取得（パス系の設定は環境変数展開済み）"""

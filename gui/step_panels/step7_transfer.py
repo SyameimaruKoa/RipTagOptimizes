@@ -204,18 +204,20 @@ class Step7TransferPanel(QWidget):
         self._auto_move_flac_to_final()
     
     def _auto_move_flac_to_final(self):
-        """FLACファイルを自動的に_final_flac/アルバム名フォルダに移動（内部処理）"""
+        """FLACファイルを自動的に_final_flac/アーティスト名/アルバム名フォルダに移動（内部処理）"""
         if not self.album_folder or not self.workflow.state:
             return
         
         album_name = self.workflow.state.get_album_name()
         sanitized_album_name = self._sanitize_foldername(album_name)
+        artist_name = self.workflow.state.get_artist_name()
+        sanitized_artist_name = self._sanitize_foldername(artist_name)
         
         flac_src = os.path.join(self.album_folder, "_flac_src", sanitized_album_name)
         final_flac_base = os.path.join(self.album_folder, "_final_flac")
-        final_flac = os.path.join(final_flac_base, sanitized_album_name)
+        final_flac = os.path.join(final_flac_base, sanitized_artist_name, sanitized_album_name)
         
-        # _flac_src/アルバム名が存在しない、または_final_flac/アルバム名が既に存在する場合はスキップ
+        # _flac_src/アルバム名が存在しない、または_final_flac/アーティスト名/アルバム名が既に存在する場合はスキップ
         if not os.path.exists(flac_src):
             return
         
@@ -226,6 +228,9 @@ class Step7TransferPanel(QWidget):
         try:
             import shutil
             os.makedirs(final_flac_base, exist_ok=True)
+            # アーティスト名フォルダを作成
+            artist_dir = os.path.join(final_flac_base, sanitized_artist_name)
+            os.makedirs(artist_dir, exist_ok=True)
             shutil.move(flac_src, final_flac)
         except Exception as e:
             # エラーが発生してもUIには表示せず、ログに記録するのみ
@@ -233,24 +238,26 @@ class Step7TransferPanel(QWidget):
     
     # === サブステップ1: FLAC関連 ===
     def on_move_flac_to_final(self):
-        """FLACファイルを_final_flac/アルバム名フォルダに移動（手動実行）"""
+        """FLACファイルを_final_flac/アーティスト名/アルバム名フォルダに移動（手動実行）"""
         if not self.album_folder or not self.workflow.state:
             QMessageBox.warning(self, "エラー", "アルバムが選択されていません。")
             return
         
         album_name = self.workflow.state.get_album_name()
         sanitized_album_name = self._sanitize_foldername(album_name)
+        artist_name = self.workflow.state.get_artist_name()
+        sanitized_artist_name = self._sanitize_foldername(artist_name)
         
         flac_src = os.path.join(self.album_folder, "_flac_src", sanitized_album_name)
         final_flac_base = os.path.join(self.album_folder, "_final_flac")
-        final_flac = os.path.join(final_flac_base, sanitized_album_name)
+        final_flac = os.path.join(final_flac_base, sanitized_artist_name, sanitized_album_name)
         
-        # _final_flac/アルバム名が既に存在する場合
+        # _final_flac/アーティスト名/アルバム名が既に存在する場合
         if os.path.exists(final_flac):
             QMessageBox.information(
                 self,
                 "確認",
-                f"FLACは既に _final_flac/{sanitized_album_name} に移動済みです。\n\n{final_flac}"
+                f"FLACは既に _final_flac/{sanitized_artist_name}/{sanitized_album_name} に移動済みです。\n\n{final_flac}"
             )
             return
         
@@ -263,31 +270,36 @@ class Step7TransferPanel(QWidget):
         try:
             import shutil
             os.makedirs(final_flac_base, exist_ok=True)
+            # アーティスト名フォルダを作成
+            artist_dir = os.path.join(final_flac_base, sanitized_artist_name)
+            os.makedirs(artist_dir, exist_ok=True)
             shutil.move(flac_src, final_flac)
             QMessageBox.information(
                 self,
                 "完了",
-                f"FLACファイルを _final_flac/{sanitized_album_name} に移動しました。\n\n"
+                f"FLACファイルを _final_flac/{sanitized_artist_name}/{sanitized_album_name} に移動しました。\n\n"
                 f"移動先: {final_flac}"
             )
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"FLACの移動に失敗しました:\n{e}")
     
     def on_open_final_flac_folder(self):
-        """_final_flac/アルバム名フォルダを開く"""
+        """_final_flac/アーティスト名/アルバム名フォルダを開く"""
         if not self.album_folder or not self.workflow.state:
             QMessageBox.warning(self, "エラー", "アルバムが選択されていません。")
             return
         
         album_name = self.workflow.state.get_album_name()
         sanitized_album_name = self._sanitize_foldername(album_name)
-        final_flac = os.path.join(self.album_folder, "_final_flac", sanitized_album_name)
+        artist_name = self.workflow.state.get_artist_name()
+        sanitized_artist_name = self._sanitize_foldername(artist_name)
+        final_flac = os.path.join(self.album_folder, "_final_flac", sanitized_artist_name, sanitized_album_name)
         
         if not os.path.exists(final_flac):
             QMessageBox.warning(
                 self, 
                 "エラー", 
-                f"_final_flac/{sanitized_album_name} フォルダが見つかりません。\n\n"
+                f"_final_flac/{sanitized_artist_name}/{sanitized_album_name} フォルダが見つかりません。\n\n"
                 f"先に「⓪ FLACを_final_flacに移動」ボタンを実行してください。\n\n"
                 f"期待されるパス: {final_flac}"
             )
@@ -320,6 +332,13 @@ class Step7TransferPanel(QWidget):
         
         try:
             subprocess.Popen([winscp_path])
+            QMessageBox.information(
+                self,
+                "WinSCP 起動中",
+                "WinSCP を起動しました。\n\n"
+                "NAS/サーバーに接続して、FLAC ファイルをアップロードしてください。\n"
+                "アップロード完了後、WinSCP を閉じてください。"
+            )
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"WinSCPの起動に失敗しました:\n{e}")
     
@@ -330,6 +349,24 @@ class Step7TransferPanel(QWidget):
             QMessageBox.warning(self, "エラー", "アルバムが選択されていません。")
             return
         
+        # アーティスト名/アルバム名の構成を優先
+        if self.workflow.state:
+            album_name = self.workflow.state.get_album_name()
+            sanitized_album_name = self._sanitize_foldername(album_name)
+            artist_name = self.workflow.state.get_artist_name()
+            sanitized_artist_name = self._sanitize_foldername(artist_name)
+            aac_folder_specific = os.path.join(self.album_folder, "_aac_output", sanitized_artist_name, sanitized_album_name)
+            
+            # 具体的なアルバムフォルダが存在する場合はそちらを開く
+            if os.path.exists(aac_folder_specific):
+                try:
+                    os.startfile(aac_folder_specific)
+                    return
+                except Exception as e:
+                    QMessageBox.critical(self, "エラー", f"フォルダを開けませんでした:\n{e}")
+                    return
+        
+        # フォールバック: _aac_output全体を開く
         aac_folder = os.path.join(self.album_folder, "_aac_output")
         if not os.path.exists(aac_folder):
             QMessageBox.warning(self, "エラー", f"AACフォルダが見つかりません:\n{aac_folder}")
@@ -358,6 +395,14 @@ class Step7TransferPanel(QWidget):
         
         try:
             subprocess.Popen([itunes_path])
+            QMessageBox.information(
+                self,
+                "iTunes 起動中",
+                "iTunes を起動しました。\n\n"
+                "AACフォルダからファイルをドラッグ&ドロップするか、\n"
+                "手動で AAC ファイルをライブラリに追加してください。\n\n"
+                "追加完了後、iTunes を閉じてください。"
+            )
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"iTunesの起動に失敗しました:\n{e}")
     
@@ -368,6 +413,24 @@ class Step7TransferPanel(QWidget):
             QMessageBox.warning(self, "エラー", "アルバムが選択されていません。")
             return
         
+        # アーティスト名/アルバム名の構成を優先
+        if self.workflow.state:
+            album_name = self.workflow.state.get_album_name()
+            sanitized_album_name = self._sanitize_foldername(album_name)
+            artist_name = self.workflow.state.get_artist_name()
+            sanitized_artist_name = self._sanitize_foldername(artist_name)
+            opus_folder_specific = os.path.join(self.album_folder, "_opus_output", sanitized_artist_name, sanitized_album_name)
+            
+            # 具体的なアルバムフォルダが存在する場合はそちらを開く
+            if os.path.exists(opus_folder_specific):
+                try:
+                    os.startfile(opus_folder_specific)
+                    return
+                except Exception as e:
+                    QMessageBox.critical(self, "エラー", f"フォルダを開けませんでした:\n{e}")
+                    return
+        
+        # フォールバック: _opus_output全体を開く
         opus_folder = os.path.join(self.album_folder, "_opus_output")
         if not os.path.exists(opus_folder):
             QMessageBox.warning(self, "エラー", f"Opusフォルダが見つかりません:\n{opus_folder}")
@@ -392,7 +455,7 @@ class Step7TransferPanel(QWidget):
             QMessageBox.critical(self, "エラー", f"フォルダを開けませんでした:\n{e}")
     
     def on_launch_freefilesync(self):
-        """FreeFileSyncを起動"""
+        """FreeFileSyncを起動（設定ファイルを指定）"""
         ffs_path = self.config.get_tool_path("FreeFileSync")
         
         if not ffs_path or not os.path.exists(ffs_path):
@@ -406,8 +469,23 @@ class Step7TransferPanel(QWidget):
             )
             return
         
+        # 設定ファイルパスを取得（オプション）
+        config_file = None
         try:
-            subprocess.Popen([ffs_path])
+            config_file = self.config.get_setting("freefilesync_config")
+            if config_file:
+                # 環境変数を展開
+                config_file = self.config.expand_path(config_file)
+        except Exception:
+            pass
+        
+        try:
+            if config_file and os.path.exists(config_file):
+                # 設定ファイルを指定して起動
+                subprocess.Popen([ffs_path, config_file])
+            else:
+                # 設定ファイルが無い場合は通常起動
+                subprocess.Popen([ffs_path])
         except Exception as e:
             QMessageBox.critical(self, "エラー", f"FreeFileSyncの起動に失敗しました:\n{e}")
     

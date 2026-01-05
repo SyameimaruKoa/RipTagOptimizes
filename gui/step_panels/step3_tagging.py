@@ -187,7 +187,15 @@ class Step3TaggingPanel(QWidget):
         
         if success:
             self.launch_button.setEnabled(False)
-            # 起動ポップは省略（ユーザー要望）
+            # Mp3tag起動確認ダイアログ
+            QMessageBox.information(
+                self,
+                "Mp3tag 起動中",
+                "Mp3tag を起動しました。\n\n"
+                "ファイルのメタデータ編集とリネームを行ってください。\n"
+                "作業が完了したら、Mp3tag を閉じてください。\n\n"
+                "⏱️ 自動検出：Mp3tag の終了を監視中..."
+            )
     
     def on_mp3tag_finished(self, exit_code, exit_status):
         """Mp3tag 終了時の処理"""

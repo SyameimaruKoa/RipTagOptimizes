@@ -37,6 +37,7 @@ class Step5OpusPanel(QWidget):
         desc = QLabel(
             "1. foobar2000 を起動（入力パスは自動コピー済み）\n"
             "2. foobar2000 でファイルを追加して Opus 変換を実行\n"
+            "   ⚠️ 出力先: Converter設定で foobar2000 フォルダに指定してください\n"
             "3. 変換完了後 foobar2000 を閉じると自動で取り込みダイアログ表示"
         )
         desc.setWordWrap(True)
@@ -60,6 +61,19 @@ class Step5OpusPanel(QWidget):
         layout.addLayout(main_btns)
 
         layout.addSpacing(6)
+
+        # foobar2000 出力先設定の案内
+        external_output = self.config.get_setting('ExternalOutputDir', '%USERPROFILE%\\Videos\\エンコード済み')
+        config_hint = QLabel(
+            "<b>⚙️ foobar2000設定（初回のみ）:</b><br>"
+            "Converter設定で 出力フォルダ を以下に設定してください:<br>"
+            f"<code>{external_output}/foobar2000</code>"
+        )
+        config_hint.setWordWrap(True)
+        config_hint.setStyleSheet("background-color: #fffacd; color: #333; padding: 8px; border-radius: 4px; font-weight: normal;")
+        layout.addWidget(config_hint)
+
+        layout.addSpacing(10)
 
         # 状態表示
         status_row = QHBoxLayout()
@@ -145,6 +159,13 @@ class Step5OpusPanel(QWidget):
         try:
             # 既に起動中なら新規起動はせず状態表示のみ更新
             if self.foobar_proc is not None and self.foobar_proc.poll() is None:
+                QMessageBox.information(
+                    self,
+                    "foobar2000 実行中",
+                    "foobar2000 は既に起動しています。\n\n"
+                    "ファイルを追加して Opus 変換を実行してください。\n"
+                    "変換完了後、foobar2000 を閉じてください。"
+                )
                 self.foobar_status.setText("起動中")
                 return
             # 設定で /add を使って自動追加（既定: 有効）
@@ -160,38 +181,61 @@ class Step5OpusPanel(QWidget):
             self.foobar_proc = subprocess.Popen(args)
             self.foobar_status.setText("起動中…")
             self._proc_timer.start()
+            QMessageBox.information(
+                self,
+                "foobar2000 起動中",
+                "foobar2000 を起動しました。\n\n"
+                "入力パスはクリップボードにコピー済みです。\n"
+                "ファイルを追加して Opus 形式で変換を実行してください。\n\n"
+                "変換完了後、foobar2000 を閉じてください。"
+            )
         except Exception as e:
             QMessageBox.critical(self, "起動失敗", str(e))
 
     def on_ingest(self, init_dir: Optional[str] = None):
         """Opus出力を取り込み、_opus_output/アルバム名/ に集約する。
+        ユーザーは foobar2000 の出力先を ExternalOutputDir/opus_output に設定する必要があります。
         ファイル名を finalFile/instrumentalFile に基づいてリネーム（拡張子を .opus に変更）
         """
         if not self.album_folder or not self.workflow.state:
             return
         
-        # 既定の初期位置（config.iniから取得）
+        # 既定の初期位置（ExternalOutputDir/opus_output を優先）
         if init_dir:
             start_dir = init_dir
         else:
-            default_dir = self.config.get_default_directory('opus_output')
-            if not default_dir or not os.path.isdir(default_dir):
+            # ExternalOutputDir + opus_output フォルダ名を組み合わせる
+            external_dir = self.config.get_setting("ExternalOutputDir")
+            opus_folder_name = self.config.get_directory_name('opus_output')  # フォルダ名のみを取得
+            if external_dir and opus_folder_name:
+                external_dir = self.config.expand_path(external_dir)
+                candidate = os.path.join(external_dir, opus_folder_name)
+                # フォルダが存在する場合はそれを使用、存在しない場合は ExternalOutputDir を使用
+                if os.path.isdir(candidate):
+                    start_dir = candidate
+                else:
+                    start_dir = external_dir
+            elif external_dir:
+                external_dir = self.config.expand_path(external_dir)
+                start_dir = external_dir
+            else:
                 # フォールバック: ダウンロードフォルダ
-                default_dir = os.path.join(os.path.expanduser("~"), "Downloads")
-            start_dir = default_dir
+                start_dir = os.path.join(os.path.expanduser("~"), "Downloads")
         
         src = QFileDialog.getExistingDirectory(self, "Opus出力フォルダを選択", start_dir)
         if not src:
             return
         
-        # アルバム名を取得してサニタイズ
+        # アルバム名とアーティスト名を取得してサニタイズ
         album_name = self.workflow.state.get_album_name()
         album_name = self._sanitize_foldername(album_name)
+        artist_name = self.workflow.state.get_artist_name()
+        artist_name = self._sanitize_foldername(artist_name)
         
-        # 出力先: _opus_output/アルバム名/
+        # 出力先: _opus_output/アーティスト名/アルバム名/
         dst_name = self.workflow.state.get_path("opusOutput")
         dst_base = os.path.join(self.album_folder, dst_name)
-        dst = os.path.join(dst_base, album_name)
+        dst = os.path.join(dst_base, artist_name, album_name)
         os.makedirs(dst, exist_ok=True)
         
         # トラック情報から期待されるファイル名マッピングを作成
@@ -303,11 +347,12 @@ class Step5OpusPanel(QWidget):
         if not self.album_folder or not self.workflow.state:
             return
         
-        # アルバム名サブフォルダを含めたパス
+        # アルバム名とアーティスト名を含めたパス
         album_name = self._sanitize_foldername(self.workflow.state.get_album_name())
+        artist_name = self._sanitize_foldername(self.workflow.state.get_artist_name())
         dst_name = self.workflow.state.get_path("opusOutput")
         dst_base = os.path.join(self.album_folder, dst_name)
-        dst = os.path.join(dst_base, album_name)
+        dst = os.path.join(dst_base, artist_name, album_name)
         
         got = 0
         if os.path.isdir(dst):

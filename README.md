@@ -142,7 +142,7 @@ Step 2 ではローカルにインストールされた Demucs を用いて `no_
 ```
 work/
   └─ [ArtistName] - [AlbumName]/  ← アルバムフォルダ
-       ├─ state.json              ← 進捗管理ファイル
+       ├─ state.json              ← 進捗管理ファイル（各アルバムの処理状態）
        ├─ 01 - Track.flac         ← 完成品FLAC
        ├─ 02 - Track (Inst).flac  ← Demucs成果物
        ├─ _flac_src/              ← (Step1) 生FLAC置き場
@@ -152,6 +152,28 @@ work/
        ├─ _artwork_resized/       ← (Step6) リサイズ画像
        └─ _logs/                  ← 自動処理ログ
 ```
+
+### 重要なファイル
+
+#### state.json
+各アルバムの処理進捗を管理するファイル。以下の情報を保存します：
+- 現在のステップ（currentStep）
+- スキップされたステップ（flags.step2_skipped など）
+- トラック情報（tracks）
+- アルバム名、アーティスト名
+
+**注意**: このファイルは Git 管理されません。各ユーザー環境で自動生成されます。
+
+#### config.ini
+アプリケーション全体の設定ファイル。以下の情報を管理します：
+- 外部ツールのパス（[Paths]）
+- 初期ディレクトリ設定（[DefaultDirectories]）
+- 画質・品質設定（[Settings]、[Artwork]）
+- Demucs 自動除外キーワード（[Demucs]）
+
+**注意**: 
+- このファイルは Git 管理されません（個人設定のため）
+- 初回起動時、一般的なツールパスを自動検出して作成されます
 
 ## トラブルシューティング
 

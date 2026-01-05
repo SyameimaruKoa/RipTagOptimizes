@@ -304,18 +304,20 @@ class GenericStepPanel(QWidget):
     
     def copy_to_final_flac(self):
         """_final_flac フォルダにコピー (Step 8)
-        アルバム名のサブフォルダを作成し、finalFileの名前でコピー
+        アーティスト名/アルバム名のサブフォルダを作成し、finalFileの名前でコピー
         """
         if not self.album_folder or not self.workflow.state:
             return
         
-        # アルバム名を取得してサニタイズ
+        # アルバム名とアーティスト名を取得してサニタイズ
         album_name = self.workflow.state.get_album_name()
         album_name = self._sanitize_foldername(album_name)
+        artist_name = self.workflow.state.get_artist_name()
+        artist_name = self._sanitize_foldername(artist_name)
         
-        # 出力先: _final_flac/アルバム名/
+        # 出力先: _final_flac/アーティスト名/アルバム名/
         final_base = os.path.join(self.album_folder, "_final_flac")
-        final_dir = os.path.join(final_base, album_name)
+        final_dir = os.path.join(final_base, artist_name, album_name)
         os.makedirs(final_dir, exist_ok=True)
         
         # _flac_src/アルバム名 を優先的に探索
@@ -397,7 +399,7 @@ class GenericStepPanel(QWidget):
         QMessageBox.information(
             self,
             "完了",
-            f"{success_count} 個のFLACファイルを '_final_flac/{album_name}/' にコピーしました。"
+            f"{success_count} 個のFLACファイルを '_final_flac/{artist_name}/{album_name}/' にコピーしました。"
         )
     
     def _sanitize_foldername(self, name: str) -> str:

@@ -123,9 +123,11 @@ class Step0MusicCenterPanel(QWidget):
             subprocess.Popen([music_center_exe])
             QMessageBox.information(
                 self,
-                "起動しました",
+                "Music Center 起動中",
                 "Music Center を起動しました。\n\n"
-                "CD を挿入して、FLAC 形式で取り込みを開始してください。"
+                "CD を挿入して、FLAC 形式での取り込みを開始してください。\n"
+                "取り込み完了後、Music Center を閉じてください。\n\n"
+                "⏱️ 監視中：Music Center の終了を待機中..."
             )
         except Exception as e:
             QMessageBox.critical(

@@ -1,5 +1,7 @@
 .venv
 work/*/*
+config.ini
+state.json
 
 # OS
 .DS_Store

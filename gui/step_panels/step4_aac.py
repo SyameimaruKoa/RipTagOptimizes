@@ -42,6 +42,7 @@ class Step4AacPanel(QWidget):
         desc = QLabel(
             "1. MediaHuman を起動（入力パスは自動コピー済み）\n"
             "2. MediaHuman でフォルダを追加して AAC 変換を実行\n"
+            "   ⚠️ 出力先: 設定で 変換MediaHuman フォルダに指定してください\n"
             "3. 変換完了後 MediaHuman を閉じると自動で取り込みダイアログ表示"
         )
         desc.setWordWrap(True)
@@ -63,6 +64,19 @@ class Step4AacPanel(QWidget):
         self.btn_complete.clicked.connect(self.on_complete)
         main_btns.addWidget(self.btn_complete)
         layout.addLayout(main_btns)
+
+        layout.addSpacing(10)
+
+        # MediaHuman 出力先設定の案内
+        external_output = self.config.get_setting('ExternalOutputDir', '%USERPROFILE%\\Videos\\エンコード済み')
+        config_hint = QLabel(
+            "<b>⚙️ MediaHuman設定（初回のみ）:</b><br>"
+            "「オプション」→「フォルダ」で 出力フォルダ を以下に設定してください:<br>"
+            f"<code>{external_output}/変換MediaHuman</code>"
+        )
+        config_hint.setWordWrap(True)
+        config_hint.setStyleSheet("background-color: #fffacd; color: #333; padding: 8px; border-radius: 4px; font-weight: normal;")
+        layout.addWidget(config_hint)
 
         layout.addSpacing(10)
 
@@ -152,15 +166,31 @@ class Step4AacPanel(QWidget):
             import subprocess
             # 既に起動中なら新規起動はせず状態監視のみ継続
             if self.mediahuman_proc is not None and self.mediahuman_proc.poll() is None:
+                QMessageBox.information(
+                    self,
+                    "MediaHuman 実行中",
+                    "MediaHuman は既に起動しています。\n\n"
+                    "フォルダを追加して AAC 変換を実行してください。\n"
+                    "変換完了後、MediaHuman を閉じてください。"
+                )
                 return
             self.mediahuman_proc = subprocess.Popen([exe])
             self._mh_timer.start()
+            QMessageBox.information(
+                self,
+                "MediaHuman 起動中",
+                "MediaHuman を起動しました。\n\n"
+                "入力パスはクリップボードにコピー済みです。\n"
+                "オプション → フォルダで 出力フォルダを設定し、\n"
+                "フォルダを追加して AAC 変換を実行してください。\n\n"
+                "変換完了後、MediaHuman を閉じてください。"
+            )
         except Exception as e:
             QMessageBox.critical(self, "起動失敗", str(e))
 
     def on_ingest_outputs(self, init_dir: str | None = None):
         """MediaHuman の出力から .m4a を取り込み、_aac_output/アルバム名/ に集約する。
-        - 想定: MediaHuman の出力先はユーザー側設定。
+        - 想定: MediaHuman の出力先はユーザー側設定（ExternalOutputDir/aac_output に設定させる）。
         - 取り込み方法: ダイアログで出力フォルダを選んでもらい、そこから .m4a をコピー。
         - ファイル名を finalFile/instrumentalFile に基づいてリネーム（拡張子を .m4a に変更）
         """
@@ -168,30 +198,42 @@ class Step4AacPanel(QWidget):
         if not self.album_folder or not self.workflow.state:
             return
 
-        # 既定の初期位置（config.iniから取得）
+        # 既定の初期位置（ExternalOutputDir/aac_output を優先）
         if init_dir:
             start_dir = init_dir
         else:
-            default_dir = self.config.get_default_directory('aac_output')
-            if not default_dir or not os.path.isdir(default_dir):
-                # フォールバック: ExternalOutputDir設定またはダウンロードフォルダ
-                default_dir = self.config.get_setting("ExternalOutputDir")
-                if not default_dir or not os.path.isdir(default_dir):
-                    default_dir = os.path.join(os.path.expanduser("~"), "Downloads")
-            start_dir = default_dir
+            # ExternalOutputDir + aac_output フォルダ名を組み合わせる
+            external_dir = self.config.get_setting("ExternalOutputDir")
+            aac_folder_name = self.config.get_directory_name('aac_output')  # フォルダ名のみを取得
+            if external_dir and aac_folder_name:
+                external_dir = self.config.expand_path(external_dir)
+                candidate = os.path.join(external_dir, aac_folder_name)
+                # フォルダが存在する場合はそれを使用、存在しない場合は ExternalOutputDir を使用
+                if os.path.isdir(candidate):
+                    start_dir = candidate
+                else:
+                    start_dir = external_dir
+            elif external_dir:
+                external_dir = self.config.expand_path(external_dir)
+                start_dir = external_dir
+            else:
+                # フォールバック: ダウンロードフォルダ
+                start_dir = os.path.join(os.path.expanduser("~"), "Downloads")
         
         src = QFileDialog.getExistingDirectory(self, "MediaHuman の出力フォルダを選択", start_dir)
         if not src:
             return
 
-        # アルバム名を取得してサニタイズ
+        # アルバム名とアーティスト名を取得してサニタイズ
         album_name = self.workflow.state.get_album_name()
         album_name = self._sanitize_foldername(album_name)
+        artist_name = self.workflow.state.get_artist_name()
+        artist_name = self._sanitize_foldername(artist_name)
         
-        # 出力先: _aac_output/アルバム名/
+        # 出力先: _aac_output/アーティスト名/アルバム名/
         aac_dir_name = self.workflow.state.get_path("aacOutput")
         dst_base = os.path.join(self.album_folder, aac_dir_name)
-        dst = os.path.join(dst_base, album_name)
+        dst = os.path.join(dst_base, artist_name, album_name)
         os.makedirs(dst, exist_ok=True)
 
         # トラック情報から期待されるファイル名マッピングを作成
@@ -278,10 +320,11 @@ class Step4AacPanel(QWidget):
         if not self.album_folder or not self.workflow.state:
             return
         
-        # アルバム名サブフォルダを含めたパス
+        # アルバム名とアーティスト名を含めたパス
         album_name = self._sanitize_foldername(self.workflow.state.get_album_name())
+        artist_name = self._sanitize_foldername(self.workflow.state.get_artist_name())
         dst_base = os.path.join(self.album_folder, self.workflow.state.get_path("aacOutput"))
-        dst = os.path.join(dst_base, album_name)
+        dst = os.path.join(dst_base, artist_name, album_name)
         
         got = 0
         if os.path.exists(dst):

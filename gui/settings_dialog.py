@@ -190,6 +190,20 @@ class SettingsDialog(QDialog):
             
             form.addRow(f"{label}:", row)
         
+        # FreeFileSync設定ファイル（.ffs_gui）パス
+        row_ffs_config = QHBoxLayout()
+        edit_ffs_config = QLineEdit()
+        edit_ffs_config.setPlaceholderText("例: C:\\Users\\...\\Sync-Files Music.ffs_gui")
+        self.path_edits["FreeFileSync_Config"] = edit_ffs_config
+        row_ffs_config.addWidget(edit_ffs_config, 1)
+        
+        btn_ffs_config_browse = QPushButton("📁 参照")
+        btn_ffs_config_browse.setMaximumWidth(80)
+        btn_ffs_config_browse.clicked.connect(lambda checked: self.on_browse_ffs_config())
+        row_ffs_config.addWidget(btn_ffs_config_browse)
+        
+        form.addRow("FreeFileSync設定ファイル:", row_ffs_config)
+        
         layout.addLayout(form)
         layout.addStretch()
         
@@ -358,7 +372,11 @@ class SettingsDialog(QDialog):
         
         # ツールパス
         for key, edit in self.path_edits.items():
-            path = self.config.get_tool_path(key)
+            if key == "FreeFileSync_Config":
+                # FreeFileSync設定ファイルパスを別名で取得
+                path = self.config.config.get('Paths', 'freefilesync_config', fallback='')
+            else:
+                path = self.config.get_tool_path(key)
             if path:
                 edit.setText(path)
         
@@ -383,6 +401,17 @@ class SettingsDialog(QDialog):
         )
         if path:
             self.path_edits[key].setText(path)
+    
+    def on_browse_ffs_config(self):
+        """FreeFileSync設定ファイル（.ffs_gui）参照ボタン"""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "FreeFileSync設定ファイルを選択",
+            "",
+            "FreeFileSync設定 (*.ffs_gui);;すべてのファイル (*.*)"
+        )
+        if path:
+            self.path_edits["FreeFileSync_Config"].setText(path)
     
     def on_save(self):
         """設定を保存"""
@@ -421,12 +450,21 @@ class SettingsDialog(QDialog):
             # ツールパス
             for key, edit in self.path_edits.items():
                 path = edit.text().strip()
-                if path:
-                    self.config.config['Paths'][key] = path
+                if key == "FreeFileSync_Config":
+                    # FreeFileSync設定ファイルはPathsセクションに別名で保存
+                    if path:
+                        self.config.config['Paths']['freefilesync_config'] = path
+                    else:
+                        if 'freefilesync_config' in self.config.config['Paths']:
+                            del self.config.config['Paths']['freefilesync_config']
                 else:
-                    # 空欄の場合は削除
-                    if key in self.config.config['Paths']:
-                        del self.config.config['Paths'][key]
+                    # その他のツールパス
+                    if path:
+                        self.config.config['Paths'][key] = path
+                    else:
+                        # 空欄の場合は削除
+                        if key in self.config.config['Paths']:
+                            del self.config.config['Paths'][key]
             
             # 品質設定
             if 'Artwork' not in self.config.config:
