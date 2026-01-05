@@ -112,12 +112,17 @@ class ConfigManager:
         return None
     
     def get_directory(self, dir_name: str) -> str:
-        """ディレクトリパスを取得（環境変数展開済み、絶対パスに変換）"""
+        """ディレクトリパスを取得（環境変数展開済み、絶対パスに変換、存在しない場合は作成）"""
         path = self.config.get('Paths', dir_name, fallback='')
         expanded = self.expand_path(path)
         # 相対パスの場合は絶対パスに変換
         if expanded:
             expanded = os.path.abspath(expanded)
+            # フォルダが存在しない場合は作成
+            try:
+                os.makedirs(expanded, exist_ok=True)
+            except Exception as e:
+                print(f"[WARNING] フォルダ作成エラー ({dir_name}): {expanded} - {e}")
         return expanded
     
     def get_default_directory(self, key: str, fallback: str = "") -> str:
