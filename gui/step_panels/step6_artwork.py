@@ -204,6 +204,33 @@ class Step6ArtworkPanel(QWidget):
         p = os.path.join(self.album_folder, "_artwork_resized", "cover.webp")
         return p if os.path.exists(p) else None
 
+    def _resolve_codec_output_dir(self, codec_key: str) -> Optional[str]:
+        """AAC/Opus 出力先を新旧フォルダ構成に対応して解決する。"""
+        if not self.album_folder or not self.workflow.state:
+            return None
+
+        base_dir_name = self.workflow.state.get_path(codec_key)
+        if not base_dir_name:
+            return None
+
+        album_name = self.workflow.state.get_album_name()
+        artist_name = self.workflow.state.get_artist_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
+        sanitized_artist_name = self._sanitize_foldername(artist_name)
+        base_dir = os.path.join(self.album_folder, base_dir_name)
+
+        candidates = [
+            os.path.join(base_dir, sanitized_artist_name, sanitized_album_name),
+            os.path.join(base_dir, sanitized_album_name),
+            base_dir,
+        ]
+
+        for candidate in candidates:
+            if os.path.isdir(candidate):
+                return candidate
+
+        return candidates[0]
+
     def _auto_embed_artwork(self):
         """最適化完了後に自動的にAAC/Opusへアートワークを埋め込む"""
         if not self.album_folder or not self.workflow.state:
@@ -214,12 +241,9 @@ class Step6ArtworkPanel(QWidget):
         # AAC に JPG を埋め込み
         jpg_img = self._cover_jpg()
         if jpg_img:
-            album_name = self.workflow.state.get_album_name()
-            sanitized_album_name = self._sanitize_foldername(album_name)
-            aac_base = os.path.join(self.album_folder, self.workflow.state.get_path("aacOutput"))
-            aac_dir = os.path.join(aac_base, sanitized_album_name)
+            aac_dir = self._resolve_codec_output_dir("aacOutput")
             
-            if os.path.isdir(aac_dir):
+            if aac_dir and os.path.isdir(aac_dir):
                 aac_ok = 0
                 aac_err = 0
                 for name in os.listdir(aac_dir):
@@ -239,12 +263,9 @@ class Step6ArtworkPanel(QWidget):
         # Opus に WebP を埋め込み
         webp_img = self._cover_webp()
         if webp_img:
-            album_name = self.workflow.state.get_album_name()
-            sanitized_album_name = self._sanitize_foldername(album_name)
-            opus_base = os.path.join(self.album_folder, self.workflow.state.get_path("opusOutput"))
-            opus_dir = os.path.join(opus_base, sanitized_album_name)
+            opus_dir = self._resolve_codec_output_dir("opusOutput")
             
-            if os.path.isdir(opus_dir):
+            if opus_dir and os.path.isdir(opus_dir):
                 opus_ok = 0
                 opus_err = 0
                 for name in os.listdir(opus_dir):
@@ -384,7 +405,7 @@ class Step6ArtworkPanel(QWidget):
         opus_dir = os.path.join(opus_base, sanitized_artist_name, sanitized_album_name)
         
         if not os.path.isdir(opus_dir):
-            QMessageBox.warning(self, "未取り込み", f"_opus_output/{sanitized_artist_name}/{sanitized_album_名} がありません。Step5 で取り込み後に実行してください。")
+            QMessageBox.warning(self, "未取り込み", f"_opus_output/{sanitized_artist_name}/{sanitized_album_name} がありません。Step5 で取り込み後に実行してください。")
             return
         self._launch_mp3tag(opus_dir)
 
