@@ -971,7 +971,11 @@ class Step3TaggingPanel(QWidget):
                 # 5. ファイル名のリネーム
                 ext = os.path.splitext(orig_filename)[1]
                 track_num_str = str(new_track_int).zfill(2)
-                
+
+                # "%Track%-%title%" の形式にする
+                new_inst_basename = f"{track_num_str}-{new_title}{ext}"
+                new_inst_basename = self._sanitize_filename(new_inst_basename)
+
                 # サブフォルダには留めず、直下に移動させる
                 new_inst_filename = new_inst_basename
                 
