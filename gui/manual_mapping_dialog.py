@@ -131,11 +131,20 @@ class ManualMappingDialog(QDialog):
             best_match = None
             best_ratio = 0.0
             
+            # 親ウィジェット（Step3TaggingPanel）が _is_instrumental_by_name を持っているか確認
+            is_inst_func = None
+            if hasattr(self.parent(), "_is_instrumental_by_name"):
+                is_inst_func = self.parent()._is_instrumental_by_name
+
+            orig_is_inst = is_inst_func(original_file.lower()) if is_inst_func else False
+
             for actual_file in self.actual_files:
-                actual_norm = normalize(actual_file)
-                ratio = difflib.SequenceMatcher(None, original_norm, actual_norm).ratio()
-                
-                if ratio > best_ratio:
+                # ボーカル曲に対してインストがマッチしないようにする（逆も然り）
+                if is_inst_func:
+                    actual_is_inst = is_inst_func(actual_file.lower())
+                    if orig_is_inst != actual_is_inst:
+                        continue
+
                     best_ratio = ratio
                     best_match = actual_file
             

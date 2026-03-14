@@ -280,18 +280,20 @@ class Step3TaggingPanel(QWidget):
         import re
         by_tracknum: dict[int, str] = {}
 
-        def prefer_inst(existing: str | None, candidate: str) -> str:
-            # 既存がInstなら維持、候補がInstなら置換、どちらも同等なら候補で上書き
+        def prefer_normal(existing: str | None, candidate: str) -> str:
+            # 既存が通常版なら維持、候補が通常版なら置換、どちらもInstなら候補で上書き
             if existing:
                 ex_is_inst = self._is_instrumental_by_name(_get_basename(existing).lower())
             else:
-                ex_is_inst = False
+                ex_is_inst = True # 既存がない場合は通常版の方を優先して受け入れるためダミーでTrue
             cand_is_inst = self._is_instrumental_by_name(_get_basename(candidate).lower())
-            if ex_is_inst:
-                return existing  # 既にInstを採用済み
-            if cand_is_inst:
-                return candidate  # Instを優先して採用
-            return candidate      # どちらも通常なら最後のもの
+            if not existing:
+                return candidate
+            if not ex_is_inst:
+                return existing  # 既に通常版を採用済み
+            if not cand_is_inst:
+                return candidate  # 通常版を優先して採用
+            return candidate      # どちらもInstなら最後のもの
 
         for fname in current_flac_files:
             m = re.match(r"^(\d{1,3})\s*[-．\. ]?\s*", _get_basename(fname))
@@ -299,7 +301,7 @@ class Step3TaggingPanel(QWidget):
                 try:
                     idx = int(m.group(1))
                     prev = by_tracknum.get(idx)
-                    by_tracknum[idx] = prefer_inst(prev, fname)
+                    by_tracknum[idx] = prefer_normal(prev, fname)
                 except ValueError:
                     pass
 
@@ -334,8 +336,8 @@ class Step3TaggingPanel(QWidget):
             # 通常マッチング: バージョン情報を保持
             key = norm_title(f, remove_version_info=False)
             prev = by_title.get(key)
-            by_title[key] = prefer_inst(prev, f)
-            
+            by_title[key] = prefer_normal(prev, f)
+
             # Inst専用マップ: バージョン情報を削除して広くマッチング
             if self._is_instrumental_by_name(f.lower()):
                 key_no_ver = norm_title(f, remove_version_info=True)
@@ -435,31 +437,71 @@ class Step3TaggingPanel(QWidget):
                     if not self._is_instrumental_by_name(found_original.lower()):
                         new_file = found_original
 
+            # もし全てのマッチングに失敗した場合でも、現在設定されている currentFile が有効（ディスクに存在し、かつ誤ってInstが割り当てられていない）なら、それを尊重する
+            if not new_file:
+                old_curr = track.get("currentFile", "")
+                found_old = _find_by_basename(old_curr) if old_curr else None
+                if found_old and not self._is_instrumental_by_name(found_old.lower()):
+                    new_file = found_old
+
             # それでも無ければスキップ（ユーザーに後で表示）
             if not new_file:
                 # 未検出の行
                 self._append_mapping_row_not_found(original_file)
+                # ファイルが見つからない場合は古い（誤った）情報を残さないようクリアする
+                track["currentFile"] = ""
+                track.pop("isInstrumental", None)
+                track.pop("instrumentalFile", None)
+                track.pop("currentInstFile", None)
                 continue
             
             processed_files.add(new_file)
 
             # 同タイトルのInstパートナーを探す
-            # 優先順位: 1) 自動検出（最新版優先）, 2) state.jsonに記録済みのinstrumentalFile
             inst_partner = None
-            # まず自動検出を試す（Demucsで新しく生成されたファイルを優先）
-            auto_detected = by_title_inst.get(orig_norm_no_ver)
+            # new_file のタイトルから探す（original_fileのタイポが修正されている可能性があるため）
+            new_norm_no_ver = norm_title(new_file, remove_version_info=True)
+
+            # まず完全一致で自動検出を試す
+            auto_detected = by_title_inst.get(new_norm_no_ver)
+            if not auto_detected:
+                # originalFileのタイトルでも一応試す
+                auto_detected = by_title_inst.get(orig_norm_no_ver)
+
+            if not auto_detected:
+                # difflibを使って類似タイトルをインストマップから探す
+                import difflib
+                best_inst_match = None
+                best_inst_ratio = 0
+                for title_key, file_path in by_title_inst.items():
+                    ratio = difflib.SequenceMatcher(None, title_key, new_norm_no_ver).ratio()
+                    if ratio > best_inst_ratio and ratio > 0.6:
+                        best_inst_ratio = ratio
+                        best_inst_match = file_path
+                if best_inst_match:
+                    auto_detected = best_inst_match
+
             if auto_detected:
                 inst_partner = auto_detected
-                print(f"[DEBUG] 自動検出でinstrumentalFileを発見: {original_file} -> {inst_partner}")
+                print(f"[DEBUG] 自動検出でinstrumentalFileを発見: {new_norm_no_ver} -> {inst_partner}")
             else:
                 # 自動検出できない場合、state.jsonに記録済みのinstrumentalFileを使用
                 existing_inst = track.get("instrumentalFile")
                 found_inst = _find_by_basename(existing_inst) if existing_inst else None
+                
+                # if existing_inst was not found, check currentInstFile just in case
+                if not found_inst:
+                    existing_inst_curr = track.get("currentInstFile")
+                    found_inst = _find_by_basename(existing_inst_curr) if existing_inst_curr else None
+
                 if found_inst:
                     inst_partner = found_inst
                     print(f"[DEBUG] 既存のinstrumentalFileを使用: {original_file} -> {inst_partner}")
                 else:
-                    print(f"[DEBUG] インストファイルが見つかりません: {original_file} (normalized: '{orig_norm_no_ver}')")
+                    print(f"[DEBUG] インストファイルが見つかりません: {original_file} (normalized: '{new_norm_no_ver}')")
+                    # inst関連の古い情報をクリア
+                    track.pop("instrumentalFile", None)
+                    track.pop("currentInstFile", None)
 
             # FLACファイルからタグ情報を読み取り、最終ファイル名を生成
             final_filename = self._generate_final_filename(new_file)
