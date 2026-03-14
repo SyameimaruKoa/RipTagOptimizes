@@ -946,12 +946,8 @@ class Step3TaggingPanel(QWidget):
                 new_inst_basename = f"{track_num_str}-{new_title}{ext}"
                 new_inst_basename = self._sanitize_filename(new_inst_basename)
                 
-                # 元のディレクトリ階層を維持する
-                inst_dir_rel = os.path.dirname(inst_filename)
-                if inst_dir_rel:
-                    new_inst_filename = f"{inst_dir_rel}/{new_inst_basename}"
-                else:
-                    new_inst_filename = new_inst_basename
+                # サブフォルダには留めず、直下に移動させる
+                new_inst_filename = new_inst_basename
                 
                 new_inst_path = os.path.join(flac_src_dir, new_inst_filename)
 
@@ -1008,11 +1004,67 @@ class Step3TaggingPanel(QWidget):
         )
         
         if reply == QMessageBox.Yes:
+            # 完了時にサブフォルダ内ファイルを直下へ移動し、フラットな状態にする
+            self._flatten_flac_dir()
+            
             # ReplayGain 自動実行（設定で有効時のみ）
             self._apply_replaygain_if_enabled()
             # 完了後は維持フラグを解除
             self._force_show_mapping = False
             self.step_completed.emit()
+
+    def _flatten_flac_dir(self):
+        """FLACディレクトリ内のサブフォルダにあるファイルを直下へ移動し、空のサブフォルダを削除する"""
+        if not self.workflow.state or not self.album_folder:
+            return
+
+        try:
+            raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
+        except Exception:
+            raw_dirname = "_flac_src"
+        
+        album_name = self.workflow.state.get_album_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
+        flac_src_dir = os.path.join(self.album_folder, raw_dirname, sanitized_album_name)
+
+        if not os.path.isdir(flac_src_dir):
+            return
+
+        import shutil
+        moved_any = False
+        
+        # サブフォルダ内のファイルを直下に移動
+        for root, dirs, files in os.walk(flac_src_dir, topdown=False):
+            if root == flac_src_dir:
+                continue
+                
+            for file in files:
+                if file.lower().endswith('.flac'):
+                    src_path = os.path.join(root, file)
+                    dst_path = os.path.join(flac_src_dir, file)
+                    
+                    # 万が一被る場合はリネームして退避
+                    if os.path.exists(dst_path):
+                        base, ext = os.path.splitext(file)
+                        dst_path = os.path.join(flac_src_dir, f"{base}_moved_{os.urandom(4).hex()}{ext}")
+                    
+                    try:
+                        shutil.move(src_path, dst_path)
+                        moved_any = True
+                    except Exception as e:
+                        print(f"[WARN] ファイル移動失敗: {src_path} -> {dst_path} ({e})")
+            
+            # 空ならフォルダを削除
+            try:
+                if not os.listdir(root):
+                    os.rmdir(root)
+            except Exception:
+                pass
+        
+        if moved_any:
+            print("[INFO] サブフォルダのFLACファイルを直下に配置しました。")
+            # 配置変更を state に反映させるため、改めて再マッピングを実行
+            self.update_file_mapping()
 
     def _apply_replaygain_if_enabled(self):
         """ReplayGain を foobar2000 で測定（アルバムゲイン含む、config.ini 設定に基づく）"""
