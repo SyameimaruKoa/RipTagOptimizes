@@ -887,6 +887,29 @@ class Step3TaggingPanel(QWidget):
         from mutagen.flac import FLAC
         import shutil
 
+        # 元データの最大トラック番号を事前計算する
+        max_original_track = 0
+        for track in tracks:
+            # 除外対象のインスト版自体は対象外
+            if track.get("isInstrumental") or track.get("hasInstrumental"):
+                orig_filename = track.get("currentFile") or track.get("originalFile")
+                if orig_filename:
+                    orig_path = os.path.join(flac_src_dir, orig_filename)
+                    if os.path.exists(orig_path):
+                        try:
+                            tmp_flac = FLAC(orig_path)
+                            t_num = str(tmp_flac.get("tracknumber", ["0"])[0])
+                            if "/" in t_num:
+                                t_num = t_num.split("/")[0]
+                            if t_num.isdigit():
+                                max_original_track = max(max_original_track, int(t_num))
+                        except Exception:
+                            pass
+        
+        # もし判定できなければデフォルトを利用
+        if max_original_track == 0:
+            max_original_track = len(tracks)
+
         for track in tracks:
             # Demucs対象であり、かつインストファイルが生成されているものを対象
             if not track.get("demucsTarget") or not track.get("hasInstrumental"):
@@ -931,20 +954,23 @@ class Step3TaggingPanel(QWidget):
                     new_title += " (StemRoller)"
                 inst_flac["title"] = [new_title]
 
+                # 4. トラック番号の連番化 (元の最後のトラック番号の次から付与)
+                orig_track_num = orig_flac.get("tracknumber", ["0"])[0]
+                if "/" in str(orig_track_num):
+                    orig_track_num = str(orig_track_num).split("/")[0]
+                
+                try:
+                    new_track_int = int(orig_track_num) + max_original_track
+                except ValueError:
+                    new_track_int = max_original_track + 1
+
+                inst_flac["tracknumber"] = [str(new_track_int)]
+
                 inst_flac.save()
 
-                # 4. ファイル名のリネーム
+                # 5. ファイル名のリネーム
                 ext = os.path.splitext(orig_filename)[1]
-                
-                # トラック番号の取得 (10/14 等からの抽出、ゼロ埋め)
-                track_num = orig_flac.get("tracknumber", [""])[0]
-                if "/" in str(track_num):
-                    track_num = str(track_num).split("/")[0]
-                track_num_str = str(track_num).zfill(2) if track_num else "00"
-                
-                # "%Track%-%title%" の形式にする
-                new_inst_basename = f"{track_num_str}-{new_title}{ext}"
-                new_inst_basename = self._sanitize_filename(new_inst_basename)
+                track_num_str = str(new_track_int).zfill(2)
                 
                 # サブフォルダには留めず、直下に移動させる
                 new_inst_filename = new_inst_basename
