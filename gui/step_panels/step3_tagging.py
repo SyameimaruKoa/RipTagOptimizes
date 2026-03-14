@@ -109,7 +109,7 @@ class Step3TaggingPanel(QWidget):
             """
             <ol style='margin:0 0 0 16px; padding:0;'>
               <li>Mp3Tag起動</li>
-              <li>原曲のタグ編集と %Track% %title% でリネームをして保存</li>
+              <li>原曲のタグ編集と %Track%-%title% でリネームをして保存</li>
               <li>Mp3Tagを閉じる</li>
               <li>「インストを一括同期」ボタンを押す<br>
                   <span style='font-size:10px; color:#888;'>(自動でタグと画像コピー、Genre・Titleの(Inst)(StemRoller)付与、名前変更が行われます)</span>
@@ -912,10 +912,18 @@ class Step3TaggingPanel(QWidget):
                 inst_flac.save()
 
                 # 4. ファイル名のリネーム
-                base_name, ext = os.path.splitext(orig_filename)
+                ext = os.path.splitext(orig_filename)[1]
                 
-                # "(Inst)" などが既についている可能性を考慮し、原曲名ベースからの名前とする
-                new_inst_filename = f"{base_name} (Instrumental) (StemRoller){ext}"
+                # トラック番号の取得 (10/14 等からの抽出、ゼロ埋め)
+                track_num = orig_flac.get("tracknumber", [""])[0]
+                if "/" in str(track_num):
+                    track_num = str(track_num).split("/")[0]
+                track_num_str = str(track_num).zfill(2) if track_num else "00"
+                
+                # "%Track%-%title%" の形式にする
+                new_inst_filename = f"{track_num_str}-{new_title}{ext}"
+                new_inst_filename = self._sanitize_filename(new_inst_filename)
+                
                 new_inst_path = os.path.join(flac_src_dir, new_inst_filename)
 
                 if inst_path != new_inst_path:
