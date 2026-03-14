@@ -411,9 +411,22 @@ class Step3TaggingPanel(QWidget):
                     new_file = None
             # タイトル正規化でマッチ（インストファイルを除外）
             if not new_file:
-                candidate = by_title.get(norm_title(original_file, remove_version_info=False))
+                candidate = by_title.get(orig_norm)
                 if candidate and not self._is_instrumental_by_name(candidate.lower()):
                     new_file = candidate
+                else:
+                    # difflibを使って類似タイトルを探す
+                    import difflib
+                    best_match = None
+                    best_ratio = 0
+                    for title_key, file_path in by_title.items():
+                        if not self._is_instrumental_by_name(file_path.lower()):
+                            ratio = difflib.SequenceMatcher(None, title_key, orig_norm).ratio()
+                            if ratio > best_ratio and ratio > 0.6:  # 60%以上の類似度
+                                best_ratio = ratio
+                                best_match = file_path
+                    if best_match:
+                        new_file = best_match
 
             # マッチしない場合は、従来の安全策: 同名が存在すればそれを使う
             if not new_file:
