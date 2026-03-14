@@ -272,9 +272,13 @@ class Step2DemucsPanel(QWidget):
             "Demucs実行",
             f"以下の {len(checked_names)} 曲を外部でDemucs処理してください:\n\n"
             + "\n".join(checked_names) + "\n\n"
+            "処理しないファイルは 'demucs_ignore' フォルダに一時退避されます。\n"
             "完了したら「Demucs完了」ボタンを押してください。",
             QMessageBox.Ok
         )
+        
+        # 不要なファイルを退避
+        self._move_non_target_files_to_temp()
         
         # 完了ボタンを有効化
         self.completed_button.setEnabled(True)
@@ -285,6 +289,10 @@ class Step2DemucsPanel(QWidget):
         url = QUrl("https://colab.research.google.com/gist/SyameimaruKoa/8b9c42bd3ddccfe8512376e8a43a7633/hybrid-demucs-music-source-separation.ipynb")
         if not QDesktopServices.openUrl(url):
             QMessageBox.warning(self, "エラー", "ブラウザでColabリンクを開けませんでした。")
+        else:
+            # Colabを開いた場合も完了ボタンを有効化
+            self.completed_button.setEnabled(True)
+            self._move_non_target_files_to_temp()
     
     def on_demucs_completed(self):
         """Demucs完了ボタン"""
@@ -302,6 +310,9 @@ class Step2DemucsPanel(QWidget):
         
         if not folder:
             return
+
+        # 初めに退避したファイルを元に戻す（完了処理が進行するため）
+        self._restore_non_target_files()
 
         # インストファイルを抽出
         inst_files = extract_instrumental_files(folder)
@@ -499,6 +510,9 @@ class Step2DemucsPanel(QWidget):
         )
         
         if reply == QMessageBox.Yes:
+            # 退避したファイルを元に戻す
+            self._restore_non_target_files()
+
             # フラグを設定
             if self.workflow.state:
                 self.workflow.state.set_flag("step2_skipped", True)
@@ -617,3 +631,83 @@ class Step2DemucsPanel(QWidget):
         for char, replacement in replacements.items():
             name = name.replace(char, replacement)
         return name
+
+    def _get_demucs_ignore_dir(self) -> str:
+        """処理対象外ファイルを一時的に避難させるフォルダのパスを返す"""
+        return os.path.join(self._get_flac_src_dir(), "demucs_ignore")
+
+    def _move_non_target_files_to_temp(self):
+        """Demucs処理の対象外（チェックが入っていない）ファイルを demucs_ignore フォルダに一時退避する"""
+        if not self.workflow.state:
+            return
+            
+        flac_src_dir = self._get_flac_src_dir()
+        if not os.path.exists(flac_src_dir):
+            return
+            
+        ignore_dir = self._get_demucs_ignore_dir()
+        os.makedirs(ignore_dir, exist_ok=True)
+        
+        # チェック状態を取得
+        target_filenames = set()
+        for i in range(self.track_list.count()):
+            item = self.track_list.item(i)
+            if item.checkState() == Qt.Checked:
+                target_filenames.add(item.text())
+                
+        import shutil
+        moved_count = 0
+        tracks = self.workflow.state.get_tracks()
+        for track in tracks:
+            orig = track.get("originalFile")
+            if not orig:
+                continue
+                
+            if orig not in target_filenames:
+                src_path = os.path.join(flac_src_dir, orig)
+                dst_path = os.path.join(ignore_dir, orig)
+                if os.path.exists(src_path):
+                    try:
+                        shutil.move(src_path, dst_path)
+                        moved_count += 1
+                        print(f"[INFO] 退避: {orig} -> demucs_ignore")
+                    except Exception as e:
+                        print(f"[ERROR] ファイルの退避に失敗しました: {orig} ({e})")
+                        
+        if moved_count > 0:
+            print(f"[INFO] 合計 {moved_count} 個のファイルを demucs_ignore に退避しました。")
+
+    def _restore_non_target_files(self):
+        """demucs_ignore フォルダに退避されたファイルを元の場所に戻す"""
+        ignore_dir = self._get_demucs_ignore_dir()
+        if not os.path.exists(ignore_dir):
+            return
+            
+        flac_src_dir = self._get_flac_src_dir()
+        import shutil
+        restored_count = 0
+        
+        for name in os.listdir(ignore_dir):
+            src_path = os.path.join(ignore_dir, name)
+            dst_path = os.path.join(flac_src_dir, name)
+            if os.path.isfile(src_path):
+                # 既に同名がある場合は上書きしないようリネームするかそのままにするか（基本は移動して戻すだけなので衝突しないはず）
+                if not os.path.exists(dst_path):
+                    try:
+                        shutil.move(src_path, dst_path)
+                        restored_count += 1
+                        print(f"[INFO] 復元: {name}")
+                    except Exception as e:
+                        print(f"[ERROR] ファイルの復元に失敗しました: {name} ({e})")
+                else:
+                    print(f"[WARN] 復元先にファイルが既に存在するためスキップします: {name}")
+                    
+        if restored_count > 0:
+            print(f"[INFO] 合計 {restored_count} 個のファイルを demucs_ignore から復元しました。")
+        
+        # 中が空ならフォルダを削除
+        if not os.listdir(ignore_dir):
+            try:
+                os.rmdir(ignore_dir)
+            except Exception:
+                pass
