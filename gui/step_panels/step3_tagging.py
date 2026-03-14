@@ -460,6 +460,7 @@ class Step3TaggingPanel(QWidget):
                 # state.jsonには最終ファイル名を記録
                 inst_final_filename = self._generate_final_filename(inst_partner)
                 track["instrumentalFile"] = inst_final_filename
+                track["currentInstFile"] = inst_partner
                 track["hasInstrumental"] = True
                 track["currentFile"] = new_file
                 processed_files.add(inst_partner)
@@ -892,7 +893,8 @@ class Step3TaggingPanel(QWidget):
                 continue
 
             orig_filename = track.get("currentFile") or track.get("originalFile")
-            inst_filename = track.get("instrumentalFile")
+            # 最新のパスはcurrentInstFileに入っている。なければ後方互換でinstrumentalFileから拾う
+            inst_filename = track.get("currentInstFile") or track.get("instrumentalFile")
 
             if not orig_filename or not inst_filename:
                 continue
@@ -941,8 +943,15 @@ class Step3TaggingPanel(QWidget):
                 track_num_str = str(track_num).zfill(2) if track_num else "00"
                 
                 # "%Track%-%title%" の形式にする
-                new_inst_filename = f"{track_num_str}-{new_title}{ext}"
-                new_inst_filename = self._sanitize_filename(new_inst_filename)
+                new_inst_basename = f"{track_num_str}-{new_title}{ext}"
+                new_inst_basename = self._sanitize_filename(new_inst_basename)
+                
+                # 元のディレクトリ階層を維持する
+                inst_dir_rel = os.path.dirname(inst_filename)
+                if inst_dir_rel:
+                    new_inst_filename = f"{inst_dir_rel}/{new_inst_basename}"
+                else:
+                    new_inst_filename = new_inst_basename
                 
                 new_inst_path = os.path.join(flac_src_dir, new_inst_filename)
 
