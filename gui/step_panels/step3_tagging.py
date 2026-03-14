@@ -59,6 +59,13 @@ class Step3TaggingPanel(QWidget):
         self.rescan_button.clicked.connect(self.on_rescan)
         layout.addWidget(self.rescan_button)
         
+        # インスト同期ボタン
+        self.sync_inst_button = QPushButton("インストを一括同期 (タグ・リネーム)")
+        self.sync_inst_button.setToolTip("手動タグ付けした原曲からメタデータをインストへコピーし、ファイル名も同期します")
+        self.sync_inst_button.setStyleSheet("font-weight: bold; color: #2b78e4;")
+        self.sync_inst_button.clicked.connect(self.on_sync_instrumental)
+        layout.addWidget(self.sync_inst_button)
+        
         # 手動紐づけボタン
         self.manual_mapping_button = QPushButton("手動紐づけ")
         self.manual_mapping_button.setToolTip("自動紐づけが失敗した場合に手動で設定します")
@@ -102,11 +109,11 @@ class Step3TaggingPanel(QWidget):
             """
             <ol style='margin:0 0 0 16px; padding:0;'>
               <li>Mp3Tag起動</li>
-              <li>インストを選択</li>
-              <li>アクション: ジャンル「Instrumental」変更 → タイトル「Instrumental」追記 → タイトル「StemRoller」追記</li>
-              <li>変換 → 自動ナンバリングウィザード（トラック番号を末尾追加）</li>
-              <li>変換 → タグ→ファイル名</li>
-              <li>%Track% %title% でリネーム</li>
+              <li>原曲のタグ編集と %Track% %title% でリネームをして保存</li>
+              <li>Mp3Tagを閉じる</li>
+              <li>「インストを一括同期」ボタンを押す<br>
+                  <span style='font-size:10px; color:#888;'>(自動でタグと画像コピー、Genre・Titleの(Inst)(StemRoller)付与、名前変更が行われます)</span>
+              </li>
               <li>終わり</li>
             </ol>
             """
@@ -812,13 +819,135 @@ class Step3TaggingPanel(QWidget):
                 "手動紐づけボタンを使用してください。"
             )
             return
-        
+
         self.update_file_mapping()
         self.check_artwork()
         self._force_show_mapping = True
         self.mapping_widget.setVisible(True)
         self.complete_button.setEnabled(True)
-    
+
+    def on_sync_instrumental(self):
+        """原曲のタグとファイル名をインストゥルメンタルファイルに同期させる"""
+        if not self.workflow.state or not self.album_folder:
+            QMessageBox.warning(self, "エラー", "アルバムが読み込まれていません。")
+            return
+            
+        reply = QMessageBox.question(
+            self,
+            "確認",
+            "手動でタグ付けされた原曲のメタデータを、生成されたインストへ自動コピーします。\n\n"
+            "※同名のインストファイルは上書き・リネームされます。\n"
+            "実行しますか？",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.Yes
+        )
+        if reply != QMessageBox.Yes:
+            return
+
+        # 最新のファイル紐づけ状態を反映させる
+        self.update_file_mapping()
+
+        try:
+            raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
+        except Exception:
+            raw_dirname = "_flac_src"
+        album_name = self.workflow.state.get_album_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
+        flac_src_dir = os.path.join(self.album_folder, raw_dirname, sanitized_album_name)
+
+        if not os.path.isdir(flac_src_dir):
+            QMessageBox.warning(self, "エラー", f"フォルダが見つかりません:\n{flac_src_dir}")
+            return
+
+        tracks = self.workflow.state.get_tracks()
+        success_count = 0
+        error_count = 0
+
+        from mutagen.flac import FLAC
+        import shutil
+
+        for track in tracks:
+            # Demucs対象であり、かつインストファイルが生成されているものを対象
+            if not track.get("demucsTarget") or not track.get("hasInstrumental"):
+                continue
+
+            orig_filename = track.get("currentFile") or track.get("originalFile")
+            inst_filename = track.get("instrumentalFile")
+
+            if not orig_filename or not inst_filename:
+                continue
+
+            orig_path = os.path.join(flac_src_dir, orig_filename)
+            inst_path = os.path.join(flac_src_dir, inst_filename)
+
+            if not os.path.exists(orig_path) or not os.path.exists(inst_path):
+                print(f"[WARN] ファイルが見つかりません。orig: {orig_path}, inst: {inst_path}")
+                continue
+
+            try:
+                # 1. メタデータの全コピー
+                orig_flac = FLAC(orig_path)
+                inst_flac = FLAC(inst_path)
+
+                inst_flac.delete() # 既存タグ削除
+                for k, v in orig_flac.tags.items():
+                    inst_flac[k] = v
+
+                inst_flac.clear_pictures()
+                for pic in orig_flac.pictures:
+                    inst_flac.add_picture(pic)
+
+                # 2. ジャンル変更
+                inst_flac["genre"] = ["Instrumental"]
+
+                # 3. タイトルに「Instrumental」「StemRoller」を追記
+                original_title = orig_flac.get("title", [""])[0] if "title" in orig_flac else ""
+                new_title = original_title
+                if "Instrumental" not in new_title:
+                    new_title += " (Instrumental)"
+                if "StemRoller" not in new_title:
+                    new_title += " (StemRoller)"
+                inst_flac["title"] = [new_title]
+
+                inst_flac.save()
+
+                # 4. ファイル名のリネーム
+                base_name, ext = os.path.splitext(orig_filename)
+                
+                # "(Inst)" などが既についている可能性を考慮し、原曲名ベースからの名前とする
+                new_inst_filename = f"{base_name} (Instrumental) (StemRoller){ext}"
+                new_inst_path = os.path.join(flac_src_dir, new_inst_filename)
+
+                if inst_path != new_inst_path:
+                    if os.path.exists(new_inst_path):
+                        os.remove(new_inst_path)
+                    os.rename(inst_path, new_inst_path)
+                    
+                    # state.jsonへ反映
+                    track["instrumentalFile"] = new_inst_filename
+
+                success_count += 1
+
+            except Exception as e:
+                print(f"[ERROR] インスト同期エラー ({orig_filename}): {e}")
+                error_count += 1
+                
+        # stateを保存
+        self.workflow.state.state["tracks"] = tracks
+        self.workflow.state.save()
+
+        # UIを再更新
+        self.update_file_mapping()
+        self._force_show_mapping = True
+        self.mapping_widget.setVisible(True)
+
+        QMessageBox.information(
+            self,
+            "同期完了",
+            f"{success_count} 曲のインストゥルメンタルメタデータを同期しました。\n"
+            f"(失敗: {error_count} 曲)"
+        )
+
     def check_artwork(self):
         """アートワーク検査"""
         if not self.album_folder or not self.workflow.state:
