@@ -396,10 +396,16 @@ class Step3TaggingPanel(QWidget):
                     if candidate is not None:
                         cand_norm = norm_title(candidate, remove_version_info=False)
                         # 候補がインストファイルの場合は除外（ボーカル入りを優先）
-                        if not self._is_instrumental_by_name(candidate.lower()) and (cand_norm == orig_norm or not orig_norm):
-                            new_file = candidate
+                        if not self._is_instrumental_by_name(candidate.lower()):
+                            import difflib
+                            # 完全一致、または類似度が一定以上（タイポ修正等）なら許容する
+                            if (cand_norm == orig_norm or not orig_norm 
+                                    or difflib.SequenceMatcher(None, cand_norm, orig_norm).ratio() > 0.4):
+                                new_file = candidate
+                            else:
+                                # 番号マッチは不一致と見なし、タイトルで改めて探す
+                                new_file = None
                         else:
-                            # 番号マッチは不一致と見なし、タイトルで改めて探す
                             new_file = None
                 except ValueError:
                     new_file = None
@@ -1174,9 +1180,19 @@ class Step3TaggingPanel(QWidget):
         if not os.path.isdir(flac_src_dir):
             QMessageBox.warning(self, "エラー", f"{raw_dirname}/{sanitized_album_name} フォルダが見つかりません。")
             return
-        
-        actual_files = sorted([f for f in os.listdir(flac_src_dir) if f.lower().endswith('.flac')])
-        
+
+        # サブフォルダ含めてファイル一覧を取得
+        actual_files = []
+        for root, dirs, files in os.walk(flac_src_dir):
+            if 'demucs_ignore' in dirs:
+                dirs.remove('demucs_ignore')
+            for f in files:
+                if f.lower().endswith('.flac'):
+                    rel_path = os.path.relpath(os.path.join(root, f), flac_src_dir)
+                    rel_path = rel_path.replace('\\', '/')
+                    actual_files.append(rel_path)
+        actual_files.sort()
+
         print(f"[DEBUG] 手動紐づけダイアログ用ファイル一覧: {len(actual_files)} 個")
         for f in actual_files:
             print(f"[DEBUG]   - {f}")
