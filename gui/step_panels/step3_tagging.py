@@ -506,7 +506,6 @@ class Step3TaggingPanel(QWidget):
                     new_file = found_old
                     print(f"[DEBUG][Step3][MATCH] strategy=currentFile candidate='{found_old}'")
                 elif old_curr:
-                    import os
                     base_dir = self.album_folder
                     if self.workflow.state:
                         raw_dirname = self.workflow.state.get_path('rawFlacSrc') or '_flac_src'

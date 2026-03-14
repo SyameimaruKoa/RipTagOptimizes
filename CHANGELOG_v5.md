@@ -2,6 +2,10 @@
 
 ## v5.x 更新 (2026/03/15)
 
+- Hotfix: Step3 で `FLACファイルの取得に失敗: cannot access local variable 'os'` が出る不具合を修正。
+  - 原因: `update_file_mapping()` 内での関数ローカル `import os` により、先行参照箇所で `os` が未束縛扱いになっていた。
+  - 対応: ローカル import を削除し、モジュール先頭 import を使用するよう統一。
+
 - Step3 (Tagging) の重大な誤紐づけバグを修正。
   - 症状: `originalFile` が別トラックへ紐づくことで、表示・タグコピー・リネーム対象がズレる場合があった。
   - 原因: トラック番号付きファイルでも fuzzy 類似一致へフォールバックし、他番号トラックを拾える経路があった。
