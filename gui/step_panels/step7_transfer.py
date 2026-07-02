@@ -12,6 +12,7 @@ from PySide6.QtCore import Signal
 
 from logic.config_manager import ConfigManager
 from logic.workflow_manager import WorkflowManager
+from logic.utils import sanitize_foldername
 
 
 class Step7TransferPanel(QWidget):
@@ -558,18 +559,4 @@ class Step7TransferPanel(QWidget):
                 )
     
     def _sanitize_foldername(self, name: str) -> str:
-        """フォルダ名に使用できない文字を全角等に置換"""
-        replacements = {
-            '\\': '¥',
-            '/': '／',
-            ':': '：',
-            '*': '＊',
-            '?': '？',
-            '"': '"',
-            '<': '＜',
-            '>': '＞',
-            '|': '｜'
-        }
-        for char, replacement in replacements.items():
-            name = name.replace(char, replacement)
-        return name
+        return sanitize_foldername(name)

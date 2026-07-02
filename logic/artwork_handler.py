@@ -8,6 +8,7 @@ from typing import Optional, Tuple
 from mutagen.flac import FLAC, Picture
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.oggopus import OggOpus
+from .utils import sanitize_foldername
 
 
 def check_flac_has_artwork(flac_path: str) -> bool:
@@ -70,21 +71,7 @@ def check_album_has_artwork(album_folder: str, album_name: str = None) -> bool:
 
 
 def _sanitize_foldername(name: str) -> str:
-    """フォルダ名に使用できない文字を全角等に置換"""
-    replacements = {
-        '\\': '¥',
-        '/': '／',
-        ':': '：',
-        '*': '＊',
-        '?': '？',
-        '"': '"',
-        '<': '＜',
-        '>': '＞',
-        '|': '｜'
-    }
-    for char, replacement in replacements.items():
-        name = name.replace(char, replacement)
-    return name
+    return sanitize_foldername(name)
 
 
 def extract_artwork_from_flac(flac_path: str, output_path: str) -> bool:

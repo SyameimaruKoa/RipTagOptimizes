@@ -97,95 +97,28 @@ class BatchProcessWorker(QThread):
         self.all_completed.emit(success_count, fail_count)
     
     def _process_step4(self, workflow, album_folder, album_name):
-        """Step4: AAC変換を実行"""
-        from logic.aac_handler import AacHandler
-        
-        # state.jsonの確認
+        """Step4: AAC変換を実行（自動一括処理はサポートされていません）"""
         if workflow.state.is_step_completed("step4_aac"):
-            return True  # 既に完了済み
-        
-        aac_handler = AacHandler(self.config)
-        flac_src = os.path.join(album_folder, "_flac_src")
-        aac_dest = os.path.join(album_folder, "_aac")
-        
-        if not os.path.exists(flac_src):
-            return False
-        
-        # AAC変換実行
-        success = aac_handler.convert_all(flac_src, aac_dest)
-        if success:
-            workflow.state.mark_step_completed("step4_aac")
             return True
         return False
     
     def _process_step5(self, workflow, album_folder, album_name):
-        """Step5: Opus変換を実行"""
-        from logic.opus_handler import OpusHandler
-        
-        # state.jsonの確認
+        """Step5: Opus変換を実行（自動一括処理はサポートされていません）"""
         if workflow.state.is_step_completed("step5_opus"):
-            return True  # 既に完了済み
-        
-        opus_handler = OpusHandler(self.config)
-        flac_src = os.path.join(album_folder, "_flac_src")
-        opus_dest = os.path.join(album_folder, "_opus")
-        
-        if not os.path.exists(flac_src):
-            return False
-        
-        # Opus変換実行
-        success = opus_handler.convert_all(flac_src, opus_dest)
-        if success:
-            workflow.state.mark_step_completed("step5_opus")
             return True
         return False
     
     def _process_step6(self, workflow, album_folder, album_name):
-        """Step6: Artwork最適化を実行"""
-        from logic.artwork_handler import ArtworkHandler
-        
-        # state.jsonの確認
+        """Step6: Artwork最適化を実行（自動一括処理はサポートされていません）"""
         if workflow.state.is_step_completed("step6_artwork"):
-            return True  # 既に完了済み
-        
-        # hasArtworkフラグチェック
-        if not workflow.state.has_artwork():
-            workflow.state.mark_step_completed("step6_artwork")
-            return True  # アートワークなしの場合はスキップ
-        
-        artwork_handler = ArtworkHandler(self.config)
-        
-        # cover.jpg -> cover.webp 変換
-        cover_jpg = os.path.join(album_folder, "cover.jpg")
-        cover_webp = os.path.join(album_folder, "cover.webp")
-        
-        if not os.path.exists(cover_jpg):
-            return False
-        
-        success = artwork_handler.optimize_artwork(cover_jpg, cover_webp)
-        if success:
-            workflow.state.mark_step_completed("step6_artwork")
             return True
         return False
     
     def _process_step7(self, workflow, album_folder, album_name):
-        """Step7: 転送を実行（自動モードでは実際の転送はスキップ）"""
-        # Step7は手動確認が必要なため、状態を完了にするのみ
-        # 実際の転送はGUIから手動で行う
+        """Step7: 転送を実行（自動一括処理はサポートされていません）"""
         if workflow.state.is_step_completed("step7_transfer"):
             return True
-        
-        # 必要なファイルの存在確認のみ
-        flac_src = os.path.join(album_folder, "_flac_src")
-        aac_dest = os.path.join(album_folder, "_aac")
-        opus_dest = os.path.join(album_folder, "_opus")
-        
-        if not os.path.exists(flac_src):
-            return False
-        
-        # Step7は準備完了としてマーク（実際の転送は手動）
-        # workflow.state.mark_step_completed("step7_transfer")
-        return True
+        return False
 
 
 class BatchProcessDialog(QDialog):

@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
 
 from logic.config_manager import ConfigManager
 from logic.workflow_manager import WorkflowManager
+from logic.utils import sanitize_foldername
 
 
 class Step5OpusPanel(QWidget):
@@ -232,6 +233,15 @@ class Step5OpusPanel(QWidget):
         artist_name = self.workflow.state.get_artist_name()
         artist_name = self._sanitize_foldername(artist_name)
         
+        # もし選択フォルダの直下に .opus ファイルがなく、アルバム名のサブフォルダが存在する場合は自動で切り替え
+        try:
+            if not [f for f in os.listdir(src) if f.lower().endswith('.opus')]:
+                sub_candidate = os.path.join(src, album_name)
+                if os.path.isdir(sub_candidate):
+                    src = sub_candidate
+        except Exception:
+            pass
+        
         # 出力先: _opus_output/アーティスト名/アルバム名/
         dst_name = self.workflow.state.get_path("opusOutput")
         dst_base = os.path.join(self.album_folder, dst_name)
@@ -249,72 +259,67 @@ class Step5OpusPanel(QWidget):
             
             # トラック番号を抽出
             if final_file:
-                m = re.match(r"^(?:Disc \d+-)?(\d{2,3})", final_file)
+                m = re.match(r"^(?:Disc \d+-)?(\d+)", final_file)
                 if m:
-                    track_num = m.group(1)
+                    track_num = str(int(m.group(1))).zfill(2)
                     # 拡張子を .opus に変更
                     base_name = os.path.splitext(final_file)[0]
                     expected_files[track_num] = base_name + ".opus"
             
             if inst_file:
-                m = re.match(r"^(?:Disc \d+-)?(\d{2,3})", inst_file)
+                m = re.match(r"^(?:Disc \d+-)?(\d+)", inst_file)
                 if m:
-                    track_num = m.group(1)
+                    track_num = str(int(m.group(1))).zfill(2)
                     base_name = os.path.splitext(inst_file)[0]
                     # Instの場合は別のキーで保存（番号+Inst識別子）
                     expected_files[track_num + "_inst"] = base_name + ".opus"
         
         import shutil
         count = 0
-        for name in os.listdir(src):
-            if name.lower().endswith('.opus'):
-                src_file = os.path.join(src, name)
+        self.log_list.addItem(QListWidgetItem(f"選択フォルダ: {src}"))
+        try:
+            files = os.listdir(src)
+            self.log_list.addItem(QListWidgetItem(f"検出ファイル数: {len(files)}"))
+            opus_files = [f for f in files if f.lower().endswith('.opus')]
+            self.log_list.addItem(QListWidgetItem(f"Opusファイル数: {len(opus_files)}"))
+        except Exception as err:
+            self.log_list.addItem(QListWidgetItem(f"listdirエラー: {err}"))
+            opus_files = []
+
+        for name in opus_files:
+            src_file = os.path.join(src, name)
+            
+            # 元のファイル名からトラック番号を抽出してマッピング
+            m = re.match(r"^(?:Disc \d+-)?(\d+)", name)
+            if m:
+                track_num = str(int(m.group(1))).zfill(2)
+                # Instかどうかを判定
+                is_inst = any(k in name.lower() for k in ["(inst)", "instrumental", "off vocal", "off-vocal", "offvocal", "backing track", "karaoke"])
                 
-                # 元のファイル名からトラック番号を抽出してマッピング
-                m = re.match(r"^(\d{2,3})", name)
-                if m:
-                    track_num = m.group(1)
-                    # Instかどうかを判定
-                    is_inst = "(inst)" in name.lower() or "instrumental" in name.lower()
-                    
-                    # 期待されるファイル名を取得
-                    key = track_num + "_inst" if is_inst else track_num
-                    expected_name = expected_files.get(key)
-                    
-                    if expected_name:
-                        dst_file = os.path.join(dst, expected_name)
-                    else:
-                        # マッピングが見つからない場合は元の名前を使用
-                        dst_file = os.path.join(dst, name)
+                # 期待されるファイル名を取得
+                key = track_num + "_inst" if is_inst else track_num
+                expected_name = expected_files.get(key)
+                self.log_list.addItem(QListWidgetItem(f"マッチ: {name} -> Key: {key}, Expected: {expected_name}"))
+                
+                if expected_name:
+                    dst_file = os.path.join(dst, expected_name)
                 else:
-                    # トラック番号が抽出できない場合は元の名前を使用
                     dst_file = os.path.join(dst, name)
-                
-                try:
-                    if os.path.exists(dst_file):
-                        os.remove(dst_file)
-                    shutil.move(src_file, dst_file)
-                    count += 1
-                except Exception as e:
-                    self.log_list.addItem(QListWidgetItem(f"ERROR move {name}: {e}"))
+            else:
+                # トラック番号が抽出できない場合は元の名前を使用
+                dst_file = os.path.join(dst, name)
+            
+            try:
+                if os.path.exists(dst_file):
+                    os.remove(dst_file)
+                shutil.move(src_file, dst_file)
+                count += 1
+            except Exception as e:
+                self.log_list.addItem(QListWidgetItem(f"ERROR move {name}: {e}"))
         self.log_list.addItem(QListWidgetItem(f"取り込み (移動) 完了: {count} ファイル → {dst}"))
     
     def _sanitize_foldername(self, name: str) -> str:
-        """フォルダ名に使用できない文字を全角等に置換"""
-        replacements = {
-            '\\': '¥',
-            '/': '／',
-            ':': '：',
-            '*': '＊',
-            '?': '？',
-            '"': '"',
-            '<': '＜',
-            '>': '＞',
-            '|': '｜'
-        }
-        for char, replacement in replacements.items():
-            name = name.replace(char, replacement)
-        return name
+        return sanitize_foldername(name)
 
     def _check_foobar_status(self):
         # 当パネルから起動した foobar2000 の終了検出
@@ -333,9 +338,11 @@ class Step5OpusPanel(QWidget):
                 self.foobar_proc = None
                 # 終了後 自動取り込みダイアログ表示（初期ディレクトリは設定値）
                 try:
-                    init_dir = self.config.get_setting("ExternalOutputDir", r"C:\\Users\\kouki\\Videos\\エンコード済み")
+                    init_dir = self.config.get_setting("ExternalOutputDir")
+                    if not init_dir:
+                        init_dir = os.path.join(os.path.expanduser("~"), "Videos", "エンコード済み")
                 except Exception:
-                    init_dir = r"C:\\Users\\kouki\\Videos\\エンコード済み"
+                    init_dir = os.path.join(os.path.expanduser("~"), "Videos", "エンコード済み")
                 self.on_ingest(init_dir)
         except Exception:
             # プロセスハンドルが無効など

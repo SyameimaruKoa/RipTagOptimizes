@@ -13,6 +13,7 @@ from PySide6.QtGui import QDesktopServices
 from logic.config_manager import ConfigManager
 from logic.workflow_manager import WorkflowManager
 from logic.demucs_detector import detect_demucs_targets, extract_instrumental_files
+from logic.utils import sanitize_foldername
 from logic.external_tools import ExternalToolRunner
 
 
@@ -453,8 +454,6 @@ class Step2DemucsPanel(QWidget):
             song_name = os.path.basename(song_folder)
             progress.setLabelText(f"処理中: {song_name}")
             progress.setValue(idx)
-            # 元のファイル名を推定
-            song_name = os.path.basename(song_folder)
             
             # 出力FLACファイル名
             if not self.album_folder:
@@ -705,21 +704,7 @@ class Step2DemucsPanel(QWidget):
             print(f"[INFO] root 直下の FLAC {moved} 件を _flac_src/アルバム名 へ移動しました")
     
     def _sanitize_foldername(self, name: str) -> str:
-        """フォルダ名に使用できない文字を全角等に置換"""
-        replacements = {
-            '\\': '¥',
-            '/': '／',
-            ':': '：',
-            '*': '＊',
-            '?': '？',
-            '"': '"',
-            '<': '＜',
-            '>': '＞',
-            '|': '｜'
-        }
-        for char, replacement in replacements.items():
-            name = name.replace(char, replacement)
-        return name
+        return sanitize_foldername(name)
 
     def _get_demucs_ignore_dir(self) -> str:
         """処理対象外ファイルを一時的に避難させるフォルダのパスを返す"""

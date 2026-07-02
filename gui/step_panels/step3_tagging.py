@@ -12,6 +12,7 @@ from logic.config_manager import ConfigManager
 from logic.workflow_manager import WorkflowManager
 from logic.external_tools import ExternalToolRunner
 from logic.artwork_handler import check_album_has_artwork
+from logic.utils import sanitize_foldername, sanitize_filename
 
 
 class Step3TaggingPanel(QWidget):
@@ -984,21 +985,7 @@ class Step3TaggingPanel(QWidget):
             return current_filename
     
     def _sanitize_filename(self, filename: str) -> str:
-        """ファイル名に使用できない文字を全角等に置換"""
-        replacements = {
-            '\\': '¥',
-            '/': '／',
-            ':': '：',
-            '*': '＊',
-            '?': '？',
-            '"': '"',
-            '<': '＜',
-            '>': '＞',
-            '|': '｜'
-        }
-        for char, replacement in replacements.items():
-            filename = filename.replace(char, replacement)
-        return filename
+        return sanitize_filename(filename)
 
     def on_rescan(self):
         """Mp3tagを使わずに紐づけを再構築"""
@@ -1063,6 +1050,8 @@ class Step3TaggingPanel(QWidget):
         # ディスクごとの最大トラック番号と、生成されるインストの数を事前計算する
         max_track_per_disc = {}
         inst_count_per_disc = {}
+        inst_index_map = {}
+        inst_counters = {}
         for track in tracks:
             # インストファイル自体は除外して、原曲のトラック番号を集計
             if track.get("isInstrumental"):
@@ -1087,6 +1076,8 @@ class Step3TaggingPanel(QWidget):
                             
                         if track.get("demucsTarget") and track.get("hasInstrumental"):
                             inst_count_per_disc[d_num] = inst_count_per_disc.get(d_num, 0) + 1
+                            inst_counters[d_num] = inst_counters.get(d_num, 0) + 1
+                            inst_index_map[track["id"]] = inst_counters[d_num]
                     except Exception:
                         pass
         
@@ -1148,9 +1139,10 @@ class Step3TaggingPanel(QWidget):
                 
                 max_original_for_disc = max_track_per_disc.get(str(orig_disc_num), 1)
                 
-                try:
-                    new_track_int = int(orig_track_num) + max_original_for_disc
-                except ValueError:
+                inst_idx = inst_index_map.get(track.get("id"))
+                if inst_idx is not None:
+                    new_track_int = max_original_for_disc + inst_idx
+                else:
                     new_track_int = max_original_for_disc + 1
 
                 inst_flac["tracknumber"] = [str(new_track_int)]
@@ -1188,6 +1180,7 @@ class Step3TaggingPanel(QWidget):
                     
                     # state.jsonへ反映
                     track["instrumentalFile"] = new_inst_filename
+                    track["currentInstFile"] = new_inst_filename
 
                 success_count += 1
 
@@ -1411,18 +1404,4 @@ class Step3TaggingPanel(QWidget):
             QMessageBox.information(self, "完了", "ファイル紐づけを手動で更新しました。")
     
     def _sanitize_foldername(self, name: str) -> str:
-        """フォルダ名に使用できない文字を全角等に置換"""
-        replacements = {
-            '\\': '¥',
-            '/': '／',
-            ':': '：',
-            '*': '＊',
-            '?': '？',
-            '"': '"',
-            '<': '＜',
-            '>': '＞',
-            '|': '｜'
-        }
-        for char, replacement in replacements.items():
-            name = name.replace(char, replacement)
-        return name
+        return sanitize_foldername(name)

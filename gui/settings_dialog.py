@@ -470,10 +470,20 @@ class SettingsDialog(QDialog):
             # 品質設定
             if 'Artwork' not in self.config.config:
                 self.config.config['Artwork'] = {}
+            if 'Settings' not in self.config.config:
+                self.config.config['Settings'] = {}
             
-            self.config.config['Artwork']['JpegQuality'] = str(self.quality_spins["JpegQuality"].value())
-            self.config.config['Artwork']['WebpQuality'] = str(self.quality_spins["WebpQuality"].value())
-            self.config.config['Artwork']['ResizeWidth'] = str(self.quality_spins["ResizeWidth"].value())
+            jpeg_val = str(self.quality_spins["JpegQuality"].value())
+            webp_val = str(self.quality_spins["WebpQuality"].value())
+            width_val = str(self.quality_spins["ResizeWidth"].value())
+            
+            self.config.config['Artwork']['JpegQuality'] = jpeg_val
+            self.config.config['Artwork']['WebpQuality'] = webp_val
+            self.config.config['Artwork']['ResizeWidth'] = width_val
+            
+            self.config.config['Settings']['JpegQuality'] = jpeg_val
+            self.config.config['Settings']['WebpQuality'] = webp_val
+            self.config.config['Settings']['ResizeWidth'] = width_val
             
             # Demucs キーワード
             if 'Demucs' not in self.config.config:

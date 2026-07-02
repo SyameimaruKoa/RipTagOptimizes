@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 from logic.config_manager import ConfigManager
 from logic.workflow_manager import WorkflowManager
 from logic import artwork_handler as ah
+from logic.utils import sanitize_foldername
 
 
 class Step6ArtworkPanel(QWidget):
@@ -458,18 +459,4 @@ class Step6ArtworkPanel(QWidget):
         )
     
     def _sanitize_foldername(self, name: str) -> str:
-        """フォルダ名に使用できない文字を全角等に置換"""
-        replacements = {
-            '\\': '¥',
-            '/': '／',
-            ':': '：',
-            '*': '＊',
-            '?': '？',
-            '"': '"',
-            '<': '＜',
-            '>': '＞',
-            '|': '｜'
-        }
-        for char, replacement in replacements.items():
-            name = name.replace(char, replacement)
-        return name
+        return sanitize_foldername(name)

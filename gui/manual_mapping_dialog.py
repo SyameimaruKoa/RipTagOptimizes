@@ -144,7 +144,10 @@ class ManualMappingDialog(QDialog):
                     actual_is_inst = is_inst_func(actual_file.lower())
                     if orig_is_inst != actual_is_inst:
                         continue
-
+                
+                actual_norm = normalize(actual_file)
+                ratio = difflib.SequenceMatcher(None, actual_norm, original_norm).ratio()
+                if ratio > best_ratio:
                     best_ratio = ratio
                     best_match = actual_file
             

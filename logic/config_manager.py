@@ -78,6 +78,7 @@ class ConfigManager:
             'FreeFileSync_Config': '',
             'MusicCenterDir': '%USERPROFILE%\\Music\\Music Center',
             'WorkDir': './work',
+            'Demucs': detected_paths.get('Demucs', ''),
         }
         self.config['DefaultDirectories'] = {
             'demucs_output': '%USERPROFILE%\\Downloads',
@@ -154,6 +155,10 @@ class ConfigManager:
                 r'%USERPROFILE%\OneDrive\CUIApplication\flac\metaflac.exe',
                 r'C:\Program Files\FLAC\metaflac.exe',
                 r'C:\Program Files (x86)\FLAC\metaflac.exe',
+            ],
+            'Demucs': [
+                r'%USERPROFILE%\Documents\Demucs-GUI_2.0a1_cuda_mkl\Demucs-GUI.exe',
+                r'%USERPROFILE%\Downloads\Demucs-GUI_2.0a1_cuda_mkl\Demucs-GUI.exe',
             ],
         }
         

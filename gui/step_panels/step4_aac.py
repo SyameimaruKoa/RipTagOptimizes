@@ -14,6 +14,7 @@ from PySide6.QtCore import Signal, QTimer
 
 from logic.config_manager import ConfigManager
 from logic.workflow_manager import WorkflowManager
+from logic.utils import sanitize_foldername
 
 
 class Step4AacPanel(QWidget):
@@ -230,6 +231,15 @@ class Step4AacPanel(QWidget):
         artist_name = self.workflow.state.get_artist_name()
         artist_name = self._sanitize_foldername(artist_name)
         
+        # もし選択フォルダの直下に .m4a ファイルがなく、アルバム名のサブフォルダが存在する場合は自動で切り替え
+        try:
+            if not [f for f in os.listdir(src) if f.lower().endswith('.m4a')]:
+                sub_candidate = os.path.join(src, album_name)
+                if os.path.isdir(sub_candidate):
+                    src = sub_candidate
+        except Exception:
+            pass
+        
         # 出力先: _aac_output/アーティスト名/アルバム名/
         aac_dir_name = self.workflow.state.get_path("aacOutput")
         dst_base = os.path.join(self.album_folder, aac_dir_name)
@@ -247,17 +257,17 @@ class Step4AacPanel(QWidget):
             
             # トラック番号を抽出
             if final_file:
-                m = re.match(r"^(?:Disc \d+-)?(\d{2,3})", final_file)
+                m = re.match(r"^(?:Disc \d+-)?(\d+)", final_file)
                 if m:
-                    track_num = m.group(1)
+                    track_num = str(int(m.group(1))).zfill(2)
                     # 拡張子を .m4a に変更
                     base_name = os.path.splitext(final_file)[0]
                     expected_files[track_num] = base_name + ".m4a"
             
             if inst_file:
-                m = re.match(r"^(?:Disc \d+-)?(\d{2,3})", inst_file)
+                m = re.match(r"^(?:Disc \d+-)?(\d+)", inst_file)
                 if m:
-                    track_num = m.group(1)
+                    track_num = str(int(m.group(1))).zfill(2)
                     base_name = os.path.splitext(inst_file)[0]
                     # Instの場合は別のキーで保存（番号+Inst識別子）
                     expected_files[track_num + "_inst"] = base_name + ".m4a"
@@ -269,11 +279,11 @@ class Step4AacPanel(QWidget):
                 src_file = os.path.join(src, name)
                 
                 # 元のファイル名からトラック番号を抽出してマッピング
-                m = re.match(r"^(\d{2,3})", name)
+                m = re.match(r"^(?:Disc \d+-)?(\d+)", name)
                 if m:
-                    track_num = m.group(1)
+                    track_num = str(int(m.group(1))).zfill(2)
                     # Instかどうかを判定
-                    is_inst = "(inst)" in name.lower() or "instrumental" in name.lower()
+                    is_inst = any(k in name.lower() for k in ["(inst)", "instrumental", "off vocal", "off-vocal", "offvocal", "backing track", "karaoke"])
                     
                     # 期待されるファイル名を取得
                     key = track_num + "_inst" if is_inst else track_num
@@ -299,21 +309,7 @@ class Step4AacPanel(QWidget):
         self.folder_list.addItem(QListWidgetItem(f"取り込み (移動) 完了: {count} ファイル → {dst}"))
     
     def _sanitize_foldername(self, name: str) -> str:
-        """フォルダ名に使用できない文字を全角等に置換"""
-        replacements = {
-            '\\': '¥',
-            '/': '／',
-            ':': '：',
-            '*': '＊',
-            '?': '？',
-            '"': '"',
-            '<': '＜',
-            '>': '＞',
-            '|': '｜'
-        }
-        for char, replacement in replacements.items():
-            name = name.replace(char, replacement)
-        return name
+        return sanitize_foldername(name)
 
     def on_complete(self):
         """Step4 完了: 取り込み数で簡易チェックし、次へ進む"""
@@ -396,9 +392,11 @@ class Step4AacPanel(QWidget):
             self.mediahuman_proc = None
             # 自動で取り込みダイアログを表示
             try:
-                default_dir = self.config.get_setting("ExternalOutputDir", r"C:\\Users\\kouki\\Videos\\エンコード済み")
+                default_dir = self.config.get_setting("ExternalOutputDir")
+                if not default_dir:
+                    default_dir = os.path.join(os.path.expanduser("~"), "Videos", "エンコード済み")
             except Exception:
-                default_dir = r"C:\\Users\\kouki\\Videos\\エンコード済み"
+                default_dir = os.path.join(os.path.expanduser("~"), "Videos", "エンコード済み")
             self.on_ingest_outputs(default_dir)
         except Exception:
             self._mh_timer.stop()
