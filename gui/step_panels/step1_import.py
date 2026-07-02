@@ -462,6 +462,26 @@ class Step1ImportPanel(QWidget):
         state = StateManager(dest_folder)
         if not state.initialize(album_name, artist_name, flac_files):
             return False
+            
+        # 初期状態に自動検出（Off Vocalや指定キーワードの除外）を適用する
+        try:
+            from logic.demucs_detector import detect_demucs_targets
+            keywords = self.config.get_demucs_keywords()
+            targets = detect_demucs_targets(flac_files, keywords)
+            
+            tracks = state.get_tracks()
+            updated = False
+            for track in tracks:
+                fname = track.get("originalFile")
+                if fname in targets and not targets[fname]:
+                    track["demucsTarget"] = False
+                    updated = True
+            
+            if updated:
+                state.state["tracks"] = tracks
+                state.save()
+        except Exception as e:
+            print(f"[WARN] 初期化時の自動検出に失敗しました: {e}")
         
         # Step1完了 → Step2へ自動進行
         # まずworkflowにアルバムをロード

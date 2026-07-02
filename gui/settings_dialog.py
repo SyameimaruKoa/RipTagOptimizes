@@ -145,7 +145,7 @@ class SettingsDialog(QDialog):
             start_dir
         )
         if path:
-            self.dir_edits[key].setText(path)
+            self.dir_edits[key].setText(os.path.normpath(path))
     
     def create_tools_tab(self) -> QWidget:
         """ツールパスタブを作成"""
@@ -165,6 +165,7 @@ class SettingsDialog(QDialog):
         form = QFormLayout()
         
         tools = [
+            ("Demucs", "Demucs実行ファイル (StemRoller等)"),
             ("Mp3Tag", "Mp3tag.exe"),
             ("MediaHuman", "MediaHuman Audio Converter.exe"),
             ("Foobar2000", "foobar2000.exe"),
@@ -400,7 +401,7 @@ class SettingsDialog(QDialog):
             "実行ファイル (*.exe);;すべてのファイル (*.*)"
         )
         if path:
-            self.path_edits[key].setText(path)
+            self.path_edits[key].setText(os.path.normpath(path))
     
     def on_browse_ffs_config(self):
         """FreeFileSync設定ファイル（.ffs_gui）参照ボタン"""
@@ -411,7 +412,7 @@ class SettingsDialog(QDialog):
             "FreeFileSync設定 (*.ffs_gui);;すべてのファイル (*.*)"
         )
         if path:
-            self.path_edits["FreeFileSync_Config"].setText(path)
+            self.path_edits["FreeFileSync_Config"].setText(os.path.normpath(path))
     
     def on_save(self):
         """設定を保存"""

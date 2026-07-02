@@ -26,6 +26,7 @@ class Step2DemucsPanel(QWidget):
         self.config = config
         self.workflow = workflow
         self.album_folder = None
+        self.tool_runner = ExternalToolRunner()
         self.init_ui()
     
     def init_ui(self):
@@ -267,21 +268,85 @@ class Step2DemucsPanel(QWidget):
             QMessageBox.warning(self, "警告", "処理対象の曲が選択されていません。")
             return
         
-        msg = QMessageBox.information(
-            self,
-            "Demucs実行",
-            f"以下の {len(checked_names)} 曲を外部でDemucs処理してください:\n\n"
-            + "\n".join(checked_names) + "\n\n"
-            "処理しないファイルは 'demucs_ignore' フォルダに一時退避されます。\n"
-            "完了したら「Demucs完了」ボタンを押してください。",
-            QMessageBox.Ok
-        )
-        
         # 不要なファイルを退避
         self._move_non_target_files_to_temp()
         
+        # 対象フォルダ（_flac_src/アルバム名）を取得
+        target_dir = ""
+        if self.workflow.state and self.workflow.state.album_folder:
+            album_name = self.workflow.state.get_album_name()
+            sanitized_album_name = self._sanitize_foldername(album_name)
+            raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
+            target_dir = os.path.join(self.workflow.state.album_folder, raw_dirname, sanitized_album_name)
+        
+        # フォルダの存在確認
+        if not target_dir or not os.path.exists(target_dir):
+            QMessageBox.warning(
+                self,
+                "エラー",
+                f"対象フォルダが存在しません:\n{target_dir}"
+            )
+            return
+
+        # Windowsネイティブのバックスラッシュ絶対パスに正規化
+        target_dir = os.path.normpath(os.path.abspath(target_dir))
+        print(f"[DEBUG] ターゲットディレクトリ: {target_dir} (存在確認: {os.path.exists(target_dir)})")
+
+        # フォルダを開く
+        folder_opened = False
+        try:
+            print("[DEBUG] subprocess.Popen でエクスプローラーを起動します...")
+            import subprocess
+            subprocess.Popen(['explorer', target_dir])
+            folder_opened = True
+            print("[DEBUG] subprocess.Popen でのエクスプローラー起動指示完了。")
+        except Exception as e:
+            print(f"[WARNING] subprocess.Popen での起動に失敗しました: {e}。os.startfile を試します...")
+            try:
+                os.startfile(target_dir)
+                folder_opened = True
+                print("[DEBUG] os.startfile でのエクスプローラー起動指示完了。")
+            except Exception as e2:
+                print(f"[ERROR] os.startfile での起動も失敗しました: {e2}")
+                QMessageBox.warning(
+                    self,
+                    "警告",
+                    f"エクスプローラーでフォルダを開けませんでした。\nパス: {target_dir}\nエラー: {e2}"
+                )
+        
+        # configからDemucsツールパスを取得し、設定されていれば自動起動
+        demucs_path = self.config.get_tool_path("Demucs")
+        demucs_started = False
+        
+        if demucs_path and os.path.exists(demucs_path):
+            print(f"[DEBUG] Demucsツール起動: {demucs_path}")
+            demucs_started = self.tool_runner.run_gui_tool(demucs_path, [], target_dir)
+        
         # 完了ボタンを有効化
         self.completed_button.setEnabled(True)
+
+        if demucs_started:
+            msg_text = (
+                "Demucs を起動しました。\n\n"
+                f"以下の {len(checked_names)} 曲をDemucsで処理してください:\n\n"
+                + "\n".join(checked_names) + "\n\n"
+                "処理しないファイルは 'demucs_ignore' フォルダに一時退避されました。\n"
+                "処理が完了したら「Demucs完了」ボタンを押してください。"
+            )
+        else:
+            msg_text = (
+                "対象フォルダをエクスプローラーで開きました。\n\n"
+                f"以下の {len(checked_names)} 曲をDemucsで処理してください:\n\n"
+                + "\n".join(checked_names) + "\n\n"
+                "処理しないファイルは 'demucs_ignore' フォルダに一時退避されました。\n"
+                "処理が完了したら「Demucs完了」ボタンを押してください。"
+            )
+
+        QMessageBox.information(
+            self,
+            "Demucs処理",
+            msg_text
+        )
 
     def on_open_colab(self):
         """Colabリンクを開く"""
@@ -296,20 +361,44 @@ class Step2DemucsPanel(QWidget):
     
     def on_demucs_completed(self):
         """Demucs完了ボタン"""
-        # Demucs出力フォルダを選択（初期位置はconfig.iniから取得、なければダウンロードフォルダ）
-        default_dir = self.config.get_default_directory('demucs_output')
-        if not default_dir or not os.path.isdir(default_dir):
-            # フォールバック: ユーザーのダウンロードフォルダ
-            default_dir = os.path.join(os.path.expanduser("~"), "Downloads")
         
-        folder = QFileDialog.getExistingDirectory(
-            self,
-            "Demucs出力フォルダを選択",
-            default_dir
-        )
+        # 対象フォルダ（_flac_src/アルバム名）を取得
+        target_dir = ""
+        if self.workflow.state and self.workflow.state.album_folder:
+            album_name = self.workflow.state.state.get("albumName", "Unknown")
+            sanitized_album_name = self._sanitize_foldername(album_name)
+            target_dir = os.path.join(self.workflow.state.album_folder, "_flac_src", sanitized_album_name)
+
+        folder = None
         
+        # まず処理前ファイルが有る場所（target_dir）以下を探索して自動検出を試みる
+        if target_dir and os.path.exists(target_dir):
+            for root, dirs, files in os.walk(target_dir):
+                if "demucs_ignore" in root:
+                    continue
+                if any(f.lower() in ['no_vocals.wav', 'minus_vocals.flac'] for f in files):
+                    # インストファイルが見つかったフォルダの親をDemucs出力ルートとみなす
+                    possible_folder = os.path.dirname(root)
+                    if extract_instrumental_files(possible_folder):
+                        folder = possible_folder
+                        print(f"[DEBUG] ローカル処理済みフォルダを自動検出: {folder}")
+                        break
+
+        # 自動検出で見つからなかった場合のみダイアログを表示
         if not folder:
-            return
+            default_dir = self.config.get_default_directory('demucs_output')
+            if not default_dir or not os.path.isdir(default_dir):
+                # フォールバック: ユーザーのダウンロードフォルダ
+                default_dir = os.path.join(os.path.expanduser("~"), "Downloads")
+            
+            folder = QFileDialog.getExistingDirectory(
+                self,
+                "Demucs出力フォルダを選択",
+                default_dir
+            )
+            
+            if not folder:
+                return
 
         # 初めに退避したファイルを元に戻す（完了処理が進行するため）
         self._restore_non_target_files()

@@ -183,12 +183,45 @@ class Step3TaggingPanel(QWidget):
                 f"対象フォルダが存在しません:\n{target_dir}"
             )
             return
+            
+        import glob
+        all_flac_files = glob.glob(os.path.join(target_dir, "*.flac"))
+        
+        generated_inst_files = set()
+        if self.workflow.state:
+            for track in self.workflow.state.get_tracks():
+                inst = track.get("currentInstFile") or track.get("instrumentalFile")
+                if inst:
+                    generated_inst_files.add(inst.lower())
+                    
+        target_files = []
+        for f in all_flac_files:
+            fname = os.path.basename(f).lower()
+            # 親トラックに紐づいている（＝生成された）インストゥルメンタルファイルのみを除外
+            if fname in generated_inst_files:
+                continue
+            target_files.append(f)
+            
+        if not target_files:
+            target_files = [target_dir]
+            args = target_files
+        else:
+            # オリジナルファイルのみを対象とするプレイリストを作成
+            playlist_path = os.path.join(target_dir, "_mp3tag_target.m3u8")
+            try:
+                with open(playlist_path, 'w', encoding='utf-8') as f:
+                    for filepath in target_files:
+                        f.write(filepath + "\n")
+                args = [playlist_path]
+            except Exception as e:
+                print(f"[ERROR] プレイリスト作成失敗: {e}")
+                args = [target_dir]
         
         print(f"[DEBUG] Mp3tag起動: target_dir = {target_dir}")
 
         success = self.tool_runner.run_gui_tool(
             mp3tag_path,
-            [target_dir],
+            args,
             target_dir
         )
         
@@ -1027,28 +1060,38 @@ class Step3TaggingPanel(QWidget):
         from mutagen.flac import FLAC
         import shutil
 
-        # 元データの最大トラック番号を事前計算する
-        max_original_track = 0
+        # ディスクごとの最大トラック番号と、生成されるインストの数を事前計算する
+        max_track_per_disc = {}
+        inst_count_per_disc = {}
         for track in tracks:
-            # 除外対象のインスト版自体は対象外
-            if track.get("isInstrumental") or track.get("hasInstrumental"):
-                orig_filename = track.get("currentFile") or track.get("originalFile")
-                if orig_filename:
-                    orig_path = os.path.join(flac_src_dir, orig_filename)
-                    if os.path.exists(orig_path):
-                        try:
-                            tmp_flac = FLAC(orig_path)
-                            t_num = str(tmp_flac.get("tracknumber", ["0"])[0])
-                            if "/" in t_num:
-                                t_num = t_num.split("/")[0]
-                            if t_num.isdigit():
-                                max_original_track = max(max_original_track, int(t_num))
-                        except Exception:
-                            pass
+            # インストファイル自体は除外して、原曲のトラック番号を集計
+            if track.get("isInstrumental"):
+                continue
+                
+            orig_filename = track.get("currentFile") or track.get("originalFile")
+            if orig_filename:
+                orig_path = os.path.join(flac_src_dir, orig_filename)
+                if os.path.exists(orig_path):
+                    try:
+                        tmp_flac = FLAC(orig_path)
+                        t_num = str(tmp_flac.get("tracknumber", ["0"])[0])
+                        if "/" in t_num:
+                            t_num = t_num.split("/")[0]
+                            
+                        d_num = str(tmp_flac.get("discnumber", ["1"])[0])
+                        if "/" in d_num:
+                            d_num = d_num.split("/")[0]
+                            
+                        if t_num.isdigit():
+                            max_track_per_disc[d_num] = max(max_track_per_disc.get(d_num, 0), int(t_num))
+                            
+                        if track.get("demucsTarget") and track.get("hasInstrumental"):
+                            inst_count_per_disc[d_num] = inst_count_per_disc.get(d_num, 0) + 1
+                    except Exception:
+                        pass
         
-        # もし判定できなければデフォルトを利用
-        if max_original_track == 0:
-            max_original_track = len(tracks)
+        if not max_track_per_disc:
+            max_track_per_disc["1"] = len([t for t in tracks if not t.get("isInstrumental")])
 
         for track in tracks:
             # Demucs対象であり、かつインストファイルが生成されているものを対象
@@ -1094,17 +1137,34 @@ class Step3TaggingPanel(QWidget):
                     new_title += " (StemRoller)"
                 inst_flac["title"] = [new_title]
 
-                # 4. トラック番号の連番化 (元の最後のトラック番号の次から付与)
+                # 4. トラック番号の連番化 (そのディスクの最後のトラック番号の次から付与)
                 orig_track_num = orig_flac.get("tracknumber", ["0"])[0]
                 if "/" in str(orig_track_num):
                     orig_track_num = str(orig_track_num).split("/")[0]
+                    
+                orig_disc_num = orig_flac.get("discnumber", ["1"])[0]
+                if "/" in str(orig_disc_num):
+                    orig_disc_num = str(orig_disc_num).split("/")[0]
+                
+                max_original_for_disc = max_track_per_disc.get(str(orig_disc_num), 1)
                 
                 try:
-                    new_track_int = int(orig_track_num) + max_original_track
+                    new_track_int = int(orig_track_num) + max_original_for_disc
                 except ValueError:
-                    new_track_int = max_original_track + 1
+                    new_track_int = max_original_for_disc + 1
 
                 inst_flac["tracknumber"] = [str(new_track_int)]
+                
+                # 合わせて全体のトラック数(tracktotal/totaltracks)も更新する
+                inst_adds = inst_count_per_disc.get(str(orig_disc_num), 0)
+                if "tracktotal" in inst_flac:
+                    orig_total = str(inst_flac["tracktotal"][0])
+                    if orig_total.isdigit():
+                        inst_flac["tracktotal"] = [str(int(orig_total) + inst_adds)]
+                if "totaltracks" in inst_flac:
+                    orig_total = str(inst_flac["totaltracks"][0])
+                    if orig_total.isdigit():
+                        inst_flac["totaltracks"] = [str(int(orig_total) + inst_adds)]
 
                 inst_flac.save()
 
