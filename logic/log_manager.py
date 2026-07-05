@@ -126,19 +126,12 @@ class LogManager:
             print(f"[LogManager] 古いログのクリーンアップに失敗: {e}")
 
 
-# グローバルログマネージャーインスタンス
-_global_logger: Optional[LogManager] = None
-
-
+import threading
+_local_state = threading.local()
 def get_logger() -> LogManager:
-    """グローバルログマネージャーを取得"""
-    global _global_logger
-    if _global_logger is None:
-        _global_logger = LogManager()
-    return _global_logger
-
-
+    if not hasattr(_local_state, "logger"):
+        _local_state.logger = LogManager()
+    return _local_state.logger
 def set_album_folder(album_folder: str):
-    """グローバルログマネージャーのアルバムフォルダを設定"""
-    logger = get_logger()
-    logger.set_album_folder(album_folder)
+    get_logger().set_album_folder(album_folder)
+

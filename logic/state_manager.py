@@ -165,3 +165,8 @@ class StateManager:
             self.state["completedSteps"] = {}
         self.state["completedSteps"][step_key] = True
         return self.save()
+
+    def is_step_completed(self, step_key: str) -> bool:
+        """ステップ完了フラグを取得"""
+        return self.state.get("completedSteps", {}).get(step_key, False)
+

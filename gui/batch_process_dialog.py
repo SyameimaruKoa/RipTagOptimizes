@@ -2,6 +2,8 @@
 一括処理ダイアログ - Step4~7の自動実行
 """
 import os
+import shutil
+import re
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
     QPushButton, QListWidget, QProgressBar, QTextEdit,
@@ -33,92 +35,273 @@ class BatchProcessWorker(QThread):
         self.should_stop = True
     
     def run(self):
-        """一括処理を実行"""
         success_count = 0
         fail_count = 0
-        
         for idx, album_folder in enumerate(self.album_folders):
             if self.should_stop:
                 break
-            
             album_name = os.path.basename(album_folder)
             self.progress.emit(idx, len(self.album_folders), f"処理中: {album_name}")
-            
-            # ワークフローマネージャーを作成
             workflow = WorkflowManager(self.config)
             if not workflow.load_album(album_folder):
                 self.album_completed.emit(album_name, False, "アルバム読み込み失敗")
                 fail_count += 1
                 continue
-            
-            # ログ設定
             logger = get_logger()
             logger.set_album_folder(album_folder)
-            
             try:
-                # Step 4~7を順次実行
                 if self.start_step <= 4 <= self.end_step:
                     if not self._process_step4(workflow, album_folder, album_name):
                         self.album_completed.emit(album_name, False, "Step4 AAC変換失敗")
                         fail_count += 1
                         logger.error("batch", f"Step4失敗: {album_name}")
                         continue
-                
+                    if workflow.get_current_step() == 4:
+                        workflow.advance_step()
                 if self.start_step <= 5 <= self.end_step:
                     if not self._process_step5(workflow, album_folder, album_name):
                         self.album_completed.emit(album_name, False, "Step5 Opus変換失敗")
                         fail_count += 1
                         logger.error("batch", f"Step5失敗: {album_name}")
                         continue
-                
+                    if workflow.get_current_step() == 5:
+                        workflow.advance_step()
                 if self.start_step <= 6 <= self.end_step:
                     if not self._process_step6(workflow, album_folder, album_name):
                         self.album_completed.emit(album_name, False, "Step6 Artwork最適化失敗")
                         fail_count += 1
                         logger.error("batch", f"Step6失敗: {album_name}")
                         continue
-                
+                    if workflow.get_current_step() == 6:
+                        workflow.advance_step()
                 if self.start_step <= 7 <= self.end_step:
                     if not self._process_step7(workflow, album_folder, album_name):
                         self.album_completed.emit(album_name, False, "Step7 転送失敗")
                         fail_count += 1
                         logger.error("batch", f"Step7失敗: {album_name}")
                         continue
-                
+                    if workflow.get_current_step() == 7:
+                        workflow.advance_step()
                 self.album_completed.emit(album_name, True, "")
                 success_count += 1
                 logger.info("batch", f"一括処理完了: {album_name}")
-                
             except Exception as e:
                 self.album_completed.emit(album_name, False, f"予期しないエラー: {e}")
                 fail_count += 1
                 logger.error("batch", f"予期しないエラー: {album_name} - {e}")
-        
         self.all_completed.emit(success_count, fail_count)
-    
+
     def _process_step4(self, workflow, album_folder, album_name):
-        """Step4: AAC変換を実行（自動一括処理はサポートされていません）"""
         if workflow.state.is_step_completed("step4_aac"):
             return True
-        return False
-    
+        ext_dir = self.config.get_setting("ExternalOutputDir")
+        aac_name = self.config.get_directory_name("aac_output")
+        if not ext_dir or not aac_name:
+            return False
+        ext_dir = self.config.expand_path(ext_dir)
+        cand_base = os.path.join(ext_dir, aac_name)
+        artist_name = workflow.state.get_artist_name()
+        from logic.utils import sanitize_foldername
+        sanitized_album = sanitize_foldername(album_name)
+        sanitized_artist = sanitize_foldername(artist_name)
+        candidates = [
+            os.path.join(cand_base, sanitized_artist, sanitized_album),
+            os.path.join(cand_base, sanitized_album),
+            cand_base
+        ]
+        src_dir = None
+        for c in candidates:
+            if os.path.isdir(c) and [f for f in os.listdir(c) if f.lower().endswith(".m4a")]:
+                src_dir = c
+                break
+        if not src_dir:
+            return False
+        aac_dir_name = workflow.state.get_path("aacOutput")
+        dst_base = os.path.join(album_folder, aac_dir_name)
+        dst = os.path.join(dst_base, sanitized_artist, sanitized_album)
+        os.makedirs(dst, exist_ok=True)
+        tracks = workflow.state.get_tracks()
+        expected = {}
+        for t in tracks:
+            ff = t.get("finalFile")
+            inst = t.get("instrumentalFile")
+            if ff:
+                m = re.match(r"^(?:Disc \d+-)?(\d+)", ff)
+                if m:
+                    expected[str(int(m.group(1))).zfill(2)] = os.path.splitext(ff)[0] + ".m4a"
+            if inst:
+                m = re.match(r"^(?:Disc \d+-)?(\d+)", inst)
+                if m:
+                    expected[str(int(m.group(1))).zfill(2) + "_inst"] = os.path.splitext(inst)[0] + ".m4a"
+        for name in os.listdir(src_dir):
+            if name.lower().endswith(".m4a"):
+                src_file = os.path.join(src_dir, name)
+                m = re.match(r"^(?:Disc \d+-)?(\d+)", name)
+                if m:
+                    t_num = str(int(m.group(1))).zfill(2)
+                    is_inst = any(k in name.lower() for k in ["(inst)", "instrumental", "off vocal", "off-vocal", "offvocal", "backing track", "karaoke"])
+                    k = t_num + "_inst" if is_inst else t_num
+                    exp_name = expected.get(k)
+                    dst_file = os.path.join(dst, exp_name if exp_name else name)
+                else:
+                    dst_file = os.path.join(dst, name)
+                try:
+                    if os.path.exists(dst_file):
+                        os.remove(dst_file)
+                    shutil.move(src_file, dst_file)
+                except Exception:
+                    pass
+        got = len([f for f in os.listdir(dst) if f.lower().endswith(".m4a")])
+        if got < len(expected):
+            return False
+        workflow.state.mark_step_completed("step4_aac")
+        return True
+
     def _process_step5(self, workflow, album_folder, album_name):
-        """Step5: Opus変換を実行（自動一括処理はサポートされていません）"""
         if workflow.state.is_step_completed("step5_opus"):
             return True
-        return False
-    
+        ext_dir = self.config.get_setting("ExternalOutputDir")
+        opus_name = self.config.get_directory_name("opus_output")
+        if not ext_dir or not opus_name:
+            return False
+        ext_dir = self.config.expand_path(ext_dir)
+        cand_base = os.path.join(ext_dir, opus_name)
+        artist_name = workflow.state.get_artist_name()
+        from logic.utils import sanitize_foldername
+        sanitized_album = sanitize_foldername(album_name)
+        sanitized_artist = sanitize_foldername(artist_name)
+        candidates = [
+            os.path.join(cand_base, sanitized_artist, sanitized_album),
+            os.path.join(cand_base, sanitized_album),
+            cand_base
+        ]
+        src_dir = None
+        for c in candidates:
+            if os.path.isdir(c) and [f for f in os.listdir(c) if f.lower().endswith(".opus")]:
+                src_dir = c
+                break
+        if not src_dir:
+            return False
+        opus_dir_name = workflow.state.get_path("opusOutput")
+        dst_base = os.path.join(album_folder, opus_dir_name)
+        dst = os.path.join(dst_base, sanitized_artist, sanitized_album)
+        os.makedirs(dst, exist_ok=True)
+        tracks = workflow.state.get_tracks()
+        expected = {}
+        for t in tracks:
+            ff = t.get("finalFile")
+            inst = t.get("instrumentalFile")
+            if ff:
+                m = re.match(r"^(?:Disc \d+-)?(\d+)", ff)
+                if m:
+                    expected[str(int(m.group(1))).zfill(2)] = os.path.splitext(ff)[0] + ".opus"
+            if inst:
+                m = re.match(r"^(?:Disc \d+-)?(\d+)", inst)
+                if m:
+                    expected[str(int(m.group(1))).zfill(2) + "_inst"] = os.path.splitext(inst)[0] + ".opus"
+        for name in os.listdir(src_dir):
+            if name.lower().endswith(".opus"):
+                src_file = os.path.join(src_dir, name)
+                m = re.match(r"^(?:Disc \d+-)?(\d+)", name)
+                if m:
+                    t_num = str(int(m.group(1))).zfill(2)
+                    is_inst = any(k in name.lower() for k in ["(inst)", "instrumental", "off vocal", "off-vocal", "offvocal", "backing track", "karaoke"])
+                    k = t_num + "_inst" if is_inst else t_num
+                    exp_name = expected.get(k)
+                    dst_file = os.path.join(dst, exp_name if exp_name else name)
+                else:
+                    dst_file = os.path.join(dst, name)
+                try:
+                    if os.path.exists(dst_file):
+                        os.remove(dst_file)
+                    shutil.move(src_file, dst_file)
+                except Exception:
+                    pass
+        got = len([f for f in os.listdir(dst) if f.lower().endswith(".opus")])
+        if got < len(expected):
+            return False
+        workflow.state.mark_step_completed("step5_opus")
+        return True
+
     def _process_step6(self, workflow, album_folder, album_name):
-        """Step6: Artwork最適化を実行（自動一括処理はサポートされていません）"""
         if workflow.state.is_step_completed("step6_artwork"):
             return True
-        return False
-    
+        magick = self.config.get_tool_path("Magick")
+        if not magick or not os.path.exists(magick):
+            return False
+        import logic.artwork_handler as ah
+        flac_path = ah.find_first_flac_with_artwork(album_folder, album_name)
+        if not flac_path:
+            workflow.state.mark_step_completed("step6_artwork")
+            return True
+        tmp_cover = os.path.join(album_folder, "_cover_src.jpg")
+        if not ah.extract_artwork_from_flac(flac_path, tmp_cover):
+            return False
+        w = int(self.config.get_setting("ResizeWidth", "600"))
+        jq = int(self.config.get_setting("JpegQuality", "85"))
+        wq = int(self.config.get_setting("WebpQuality", "85"))
+        ok, jpg_path, webp_path = ah.ensure_artwork_resized_outputs(album_folder, magick, tmp_cover, w, jq, wq)
+        if not ok:
+            return False
+        workflow.state.set_artwork(True)
+        def resolve_dir(base_dir_name):
+            from logic.utils import sanitize_foldername
+            sa = sanitize_foldername(album_name)
+            art = sanitize_foldername(workflow.state.get_artist_name())
+            b_dir = os.path.join(album_folder, base_dir_name)
+            for cand in [os.path.join(b_dir, art, sa), os.path.join(b_dir, sa), b_dir]:
+                if os.path.isdir(cand):
+                    return cand
+            return os.path.join(b_dir, art, sa)
+        aac_dir = resolve_dir(workflow.state.get_path("aacOutput"))
+        if os.path.isdir(aac_dir):
+            for n in os.listdir(aac_dir):
+                if n.lower().endswith(".m4a"):
+                    ah.embed_artwork_to_mp4(os.path.join(aac_dir, n), jpg_path)
+        opus_dir = resolve_dir(workflow.state.get_path("opusOutput"))
+        if os.path.isdir(opus_dir):
+            for n in os.listdir(opus_dir):
+                if n.lower().endswith(".opus"):
+                    ah.embed_artwork_to_opus(os.path.join(opus_dir, n), webp_path)
+        workflow.state.mark_step_completed("step6_artwork")
+        return True
+
     def _process_step7(self, workflow, album_folder, album_name):
-        """Step7: 転送を実行（自動一括処理はサポートされていません）"""
         if workflow.state.is_step_completed("step7_transfer"):
             return True
-        return False
+        from logic.utils import sanitize_foldername
+        sa = sanitize_foldername(album_name)
+        art = sanitize_foldername(workflow.state.get_artist_name())
+        flac_src = os.path.join(album_folder, "_flac_src", sa)
+        final_flac_base = os.path.join(album_folder, "_final_flac")
+        final_flac = os.path.join(final_flac_base, art, sa)
+        if os.path.exists(flac_src):
+            try:
+                import shutil
+                os.makedirs(final_flac_base, exist_ok=True)
+                os.makedirs(os.path.join(final_flac_base, art), exist_ok=True)
+                if os.path.exists(final_flac):
+                    shutil.rmtree(final_flac)
+                shutil.move(flac_src, final_flac)
+                pl = os.path.join(final_flac, "_mp3tag_target.m3u8")
+                if os.path.exists(pl):
+                    os.remove(pl)
+            except Exception:
+                return False
+        workflow.state.mark_step_completed("step7_transfer")
+        workflow.state.set_status("COMPLETED")
+        workflow.state.save()
+        try:
+            from send2trash import send2trash
+            send2trash(album_folder)
+        except Exception:
+            try:
+                import shutil
+                shutil.rmtree(album_folder)
+            except Exception:
+                pass
+        return True
+
 
 
 class BatchProcessDialog(QDialog):
