@@ -241,6 +241,7 @@ class Step3TaggingPanel(QWidget):
     def on_mp3tag_finished(self, exit_code, exit_status):
         """Mp3tag 終了時の処理"""
         self.launch_button.setEnabled(True)
+        self._cleanup_playlist()
         
         if exit_code != 0:
             QMessageBox.warning(
@@ -264,7 +265,24 @@ class Step3TaggingPanel(QWidget):
     def on_mp3tag_error(self, error_msg):
         """Mp3tag エラー時の処理"""
         self.launch_button.setEnabled(True)
+        self._cleanup_playlist()
         QMessageBox.critical(self, "エラー", f"Mp3tag の起動に失敗しました:\n{error_msg}")
+        
+    def _cleanup_playlist(self):
+        """Mp3tag用の一時プレイリストファイルを削除"""
+        if not self.album_folder or not self.workflow.state:
+            return
+        try:
+            raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
+            album_name = self.workflow.state.get_album_name()
+            sanitized_album_name = self._sanitize_foldername(album_name)
+            target_dir = os.path.join(self.album_folder, raw_dirname, sanitized_album_name)
+            playlist_path = os.path.join(target_dir, "_mp3tag_target.m3u8")
+            if os.path.exists(playlist_path):
+                os.remove(playlist_path)
+                print(f"[DEBUG] クリーンアップ: {playlist_path} を削除しました")
+        except Exception as e:
+            print(f"[WARN] プレイリストのクリーンアップに失敗: {e}")
     
     def update_file_mapping(self):
         """ファイル紐づけを更新"""
@@ -919,9 +937,8 @@ class Step3TaggingPanel(QWidget):
 
     def _is_instrumental_by_name(self, lower_name: str) -> bool:
         """ファイル名だけで簡易判定（小文字を渡す）"""
-        keywords = [k.lower() for k in (self.config.get_demucs_keywords() or [])]
-        keywords += ["inst", "instrumental", "off vocal", "off-vocal", "カラオケ"]
-        return any(k in lower_name for k in keywords if k)
+        keywords = ["inst", "instrumental", "off vocal", "off-vocal", "offvocal", "backing track", "karaoke", "voiceless", "minus one", "オリジナル・カラオケ", "インスト", "オフボーカル", "オフボ", "カラオケ", "歌無し"]
+        return any(k in lower_name for k in keywords)
 
     def _generate_final_filename(self, current_filename: str) -> str:
         """FLACファイルからタグ情報を読み取り、最終的なファイル名を生成する

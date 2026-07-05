@@ -80,10 +80,10 @@ def detect_demucs_targets(track_filenames: list[str], keywords: list[str]) -> Di
 
 def extract_instrumental_files(demucs_folder: str) -> list[tuple[str, str]]:
     """
-    Demucs出力フォルダから instrumental 音源ファイルを抽出
+    Demucs出力フォルダから instrumental 音源ファイルを再帰的に抽出
     
     Args:
-        demucs_folder: Demucsの出力フォルダパス (例: htdemucs_ft/)
+        demucs_folder: Demucsの出力フォルダパス (例: htdemucs_ft/ または親フォルダ)
     
     Returns:
         [(曲フォルダパス, インストファイルパス), ...] のリスト
@@ -95,19 +95,13 @@ def extract_instrumental_files(demucs_folder: str) -> list[tuple[str, str]]:
     if not os.path.exists(demucs_folder):
         return results
     
-    # demucs_folder 直下のサブフォルダを走査
-    for item in os.listdir(demucs_folder):
-        item_path = os.path.join(demucs_folder, item)
-        if not os.path.isdir(item_path):
-            continue
-        
-        # サブフォルダ内でインストファイルを探す
-        for file in os.listdir(item_path):
+    # 再帰的にすべてのサブフォルダを走査
+    for root, dirs, files in os.walk(demucs_folder):
+        for file in files:
             file_lower = file.lower()
             # no_vocals.wav または minus_vocals.flac を検出
             if file_lower in ['no_vocals.wav', 'minus_vocals.flac']:
-                inst_file_path = os.path.join(item_path, file)
-                results.append((item_path, inst_file_path))
-                break  # 1曲につき1つのインストファイル
-    
+                inst_file_path = os.path.join(root, file)
+                results.append((root, inst_file_path))
+                
     return results

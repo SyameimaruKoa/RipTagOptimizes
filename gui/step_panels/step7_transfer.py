@@ -203,6 +203,22 @@ class Step7TransferPanel(QWidget):
         self.album_folder = album_folder
         # アルバム読み込み時に自動的にFLACを_final_flacに移動
         self._auto_move_flac_to_final()
+        
+        # 既に移動済みの final_flac フォルダ内を含め、_mp3tag_target.m3u8 が残っていればクリーンアップ
+        if self.workflow.state:
+            try:
+                album_name = self.workflow.state.get_album_name()
+                sanitized_album_name = self._sanitize_foldername(album_name)
+                artist_name = self.workflow.state.get_artist_name()
+                sanitized_artist_name = self._sanitize_foldername(artist_name)
+                playlist_in_final = os.path.join(
+                    self.album_folder, "_final_flac", sanitized_artist_name, sanitized_album_name, "_mp3tag_target.m3u8"
+                )
+                if os.path.exists(playlist_in_final):
+                    os.remove(playlist_in_final)
+                    print(f"[Step7] ロード時に _mp3tag_target.m3u8 をクリーンアップしました: {playlist_in_final}")
+            except Exception as e:
+                print(f"[Step7] プレイリストのクリーンアップ失敗: {e}")
     
     def _auto_move_flac_to_final(self):
         """FLACファイルを自動的に_final_flac/アーティスト名/アルバム名フォルダに移動（内部処理）"""
@@ -233,6 +249,12 @@ class Step7TransferPanel(QWidget):
             artist_dir = os.path.join(final_flac_base, sanitized_artist_name)
             os.makedirs(artist_dir, exist_ok=True)
             shutil.move(flac_src, final_flac)
+            
+            # 移動後に一時プレイリストファイルがあれば削除
+            playlist_in_final = os.path.join(final_flac, "_mp3tag_target.m3u8")
+            if os.path.exists(playlist_in_final):
+                os.remove(playlist_in_final)
+                print(f"[Step7] 不要なプレイリストを削除しました: {playlist_in_final}")
         except Exception as e:
             # エラーが発生してもUIには表示せず、ログに記録するのみ
             print(f"[Step7] FLAC自動移動エラー: {e}")
@@ -275,6 +297,13 @@ class Step7TransferPanel(QWidget):
             artist_dir = os.path.join(final_flac_base, sanitized_artist_name)
             os.makedirs(artist_dir, exist_ok=True)
             shutil.move(flac_src, final_flac)
+            
+            # 移動後に一時プレイリストファイルがあれば削除
+            playlist_in_final = os.path.join(final_flac, "_mp3tag_target.m3u8")
+            if os.path.exists(playlist_in_final):
+                os.remove(playlist_in_final)
+                print(f"[Step7] 不要なプレイリストを削除しました: {playlist_in_final}")
+
             QMessageBox.information(
                 self,
                 "完了",

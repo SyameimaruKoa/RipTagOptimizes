@@ -104,6 +104,13 @@ class Step2DemucsPanel(QWidget):
         self.colab_button.setEnabled(False)
         self.colab_button.clicked.connect(self.on_open_colab)
         action_layout.addWidget(self.colab_button)
+
+        # ファイル隔離ボタン
+        self.isolate_button = QPushButton("ファイル隔離")
+        self.isolate_button.setToolTip("処理対象外のFLACファイルを隔離し、フォルダを開きます")
+        self.isolate_button.setEnabled(False)
+        self.isolate_button.clicked.connect(self.on_isolate_files)
+        action_layout.addWidget(self.isolate_button)
         
         self.completed_button = QPushButton("Demucs完了")
         self.completed_button.setEnabled(False)
@@ -161,92 +168,58 @@ class Step2DemucsPanel(QWidget):
         self.demucs_button.setEnabled(True)
         self.open_folder_button.setEnabled(True)
         self.colab_button.setEnabled(True)
+        self.isolate_button.setEnabled(True)
     
     def on_item_changed(self, item: QListWidgetItem):
         """チェック状態が変更されたときに state.json に保存"""
-        if not self.workflow.state:
-            return
         track_id = item.data(Qt.UserRole)
         checked = (item.checkState() == Qt.Checked)
-        tracks = self.workflow.state.get_tracks()
-        for t in tracks:
-            if t.get("id") == track_id:
-                t["demucsTarget"] = checked
-                print(f"[DEBUG] Change: {t.get('originalFile')} -> demucsTarget={checked}")
-                break
-        self.workflow.state.state["tracks"] = tracks
-        self.workflow.state.save()
-    
+        
+        if self.workflow.state:
+            self.workflow.state.update_track(track_id, {"demucsTarget": checked})
+            print(f"[DEBUG] Change: {item.text()} -> demucsTarget={checked}")
+
     def on_select_all(self):
         """全選択"""
         self.track_list.blockSignals(True)
         for i in range(self.track_list.count()):
-            self.track_list.item(i).setCheckState(Qt.Checked)
+            item = self.track_list.item(i)
+            item.setCheckState(Qt.Checked)
+            track_id = item.data(Qt.UserRole)
+            if self.workflow.state:
+                self.workflow.state.update_track(track_id, {"demucsTarget": True})
         self.track_list.blockSignals(False)
-        # 保存
-        self.on_bulk_save()
     
     def on_deselect_all(self):
         """全解除"""
         self.track_list.blockSignals(True)
         for i in range(self.track_list.count()):
-            self.track_list.item(i).setCheckState(Qt.Unchecked)
-        self.track_list.blockSignals(False)
-        # 保存
-        self.on_bulk_save()
-
-    def on_bulk_save(self):
-        """現在のチェック状態を一括保存"""
-        if not self.workflow.state:
-            return
-        tracks = self.workflow.state.get_tracks()
-        for i in range(self.track_list.count()):
             item = self.track_list.item(i)
+            item.setCheckState(Qt.Unchecked)
             track_id = item.data(Qt.UserRole)
-            for t in tracks:
-                if t.get("id") == track_id:
-                    t["demucsTarget"] = (item.checkState() == Qt.Checked)
-                    break
-        self.workflow.state.state["tracks"] = tracks
-        self.workflow.state.save()
+            if self.workflow.state:
+                self.workflow.state.update_track(track_id, {"demucsTarget": False})
+        self.track_list.blockSignals(False)
     
     def on_auto_detect(self):
         """自動検出"""
         if not self.workflow.state:
             return
         
-        # キーワード取得
         keywords = self.config.get_demucs_keywords()
-        
-        # トラック名リスト取得
         tracks = self.workflow.state.get_tracks()
-        track_names = [t.get("originalFile", "") for t in tracks]
+        track_filenames = [t.get("originalFile") for t in tracks if t.get("originalFile")]
         
-        # 自動検出実行
-        target_flags = detect_demucs_targets(track_names, keywords)
+        targets = detect_demucs_targets(track_filenames, keywords)
         
-        # シグナルを一時的にブロック（自動検出中の誤保存を防ぐ）
         self.track_list.blockSignals(True)
-        
-        # UI に反映 & state.json に保存
         for i in range(self.track_list.count()):
             item = self.track_list.item(i)
             filename = item.text()
-            should_select = target_flags.get(filename, True)
+            should_select = targets.get(filename, True)
             item.setCheckState(Qt.Checked if should_select else Qt.Unchecked)
-            
-            # state.json にも反映
             track_id = item.data(Qt.UserRole)
-            for track in tracks:
-                if track.get("id") == track_id:
-                    track["demucsTarget"] = should_select
-                    break
-        
-        # 保存
-        self.workflow.state.state["tracks"] = tracks
-        self.workflow.state.save()
-        
-        # シグナルを再有効化
+            self.workflow.state.update_track(track_id, {"demucsTarget": should_select})
         self.track_list.blockSignals(False)
         
         QMessageBox.information(
@@ -255,7 +228,40 @@ class Step2DemucsPanel(QWidget):
             f"インストゥルメンタル曲とそのペア原曲を自動検出しました。\n"
             f"検出されたキーワード数: {len(keywords)}"
         )
-    
+
+    def _get_target_dir(self) -> str | None:
+        """処理対象FLACが配置されている _flac_src/アルバム名 フォルダのパスを取得"""
+        if not self.workflow.state or not self.workflow.state.album_folder:
+            return None
+        album_name = self.workflow.state.get_album_name()
+        sanitized_album_name = self._sanitize_foldername(album_name)
+        raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
+        target_dir = os.path.join(self.workflow.state.album_folder, raw_dirname, sanitized_album_name)
+        if not os.path.exists(target_dir):
+            return None
+        return os.path.normpath(os.path.abspath(target_dir))
+
+    def _open_target_folder(self, target_dir: str) -> bool:
+        """ターゲットフォルダをエクスプローラーで開く"""
+        try:
+            print(f"[DEBUG] subprocess.Popen でエクスプローラーを起動します: {target_dir}")
+            import subprocess
+            subprocess.Popen(['explorer', target_dir])
+            return True
+        except Exception as e:
+            print(f"[WARNING] subprocess.Popen での起動に失敗しました: {e}。os.startfile を試します...")
+            try:
+                os.startfile(target_dir)
+                return True
+            except Exception as e2:
+                print(f"[ERROR] os.startfile での起動も失敗しました: {e2}")
+                QMessageBox.warning(
+                    self,
+                    "警告",
+                    f"エクスプローラーでフォルダを開けませんでした。\nパス: {target_dir}\nエラー: {e2}"
+                )
+                return False
+
     def on_demucs_execute(self):
         """Demucs実行ボタン"""
         # チェックされた項目を集計
@@ -272,48 +278,17 @@ class Step2DemucsPanel(QWidget):
         # 不要なファイルを退避
         self._move_non_target_files_to_temp()
         
-        # 対象フォルダ（_flac_src/アルバム名）を取得
-        target_dir = ""
-        if self.workflow.state and self.workflow.state.album_folder:
-            album_name = self.workflow.state.get_album_name()
-            sanitized_album_name = self._sanitize_foldername(album_name)
-            raw_dirname = self.workflow.state.get_path("rawFlacSrc") or "_flac_src"
-            target_dir = os.path.join(self.workflow.state.album_folder, raw_dirname, sanitized_album_name)
-        
-        # フォルダの存在確認
-        if not target_dir or not os.path.exists(target_dir):
+        # 対象フォルダ（_flac_src/アルバム名）を取得して開く
+        target_dir = self._get_target_dir()
+        if not target_dir:
             QMessageBox.warning(
                 self,
                 "エラー",
-                f"対象フォルダが存在しません:\n{target_dir}"
+                "対象フォルダが存在しません。"
             )
             return
 
-        # Windowsネイティブのバックスラッシュ絶対パスに正規化
-        target_dir = os.path.normpath(os.path.abspath(target_dir))
-        print(f"[DEBUG] ターゲットディレクトリ: {target_dir} (存在確認: {os.path.exists(target_dir)})")
-
-        # フォルダを開く
-        folder_opened = False
-        try:
-            print("[DEBUG] subprocess.Popen でエクスプローラーを起動します...")
-            import subprocess
-            subprocess.Popen(['explorer', target_dir])
-            folder_opened = True
-            print("[DEBUG] subprocess.Popen でのエクスプローラー起動指示完了。")
-        except Exception as e:
-            print(f"[WARNING] subprocess.Popen での起動に失敗しました: {e}。os.startfile を試します...")
-            try:
-                os.startfile(target_dir)
-                folder_opened = True
-                print("[DEBUG] os.startfile でのエクスプローラー起動指示完了。")
-            except Exception as e2:
-                print(f"[ERROR] os.startfile での起動も失敗しました: {e2}")
-                QMessageBox.warning(
-                    self,
-                    "警告",
-                    f"エクスプローラーでフォルダを開けませんでした。\nパス: {target_dir}\nエラー: {e2}"
-                )
+        self._open_target_folder(target_dir)
         
         # configからDemucsツールパスを取得し、設定されていれば自動起動
         demucs_path = self.config.get_tool_path("Demucs")
@@ -351,14 +326,74 @@ class Step2DemucsPanel(QWidget):
 
     def on_open_colab(self):
         """Colabリンクを開く"""
+        # チェックされた項目を集計
+        checked_names = []
+        for i in range(self.track_list.count()):
+            item = self.track_list.item(i)
+            if item.checkState() == Qt.Checked:
+                checked_names.append(item.text())
+
+        if not checked_names:
+            QMessageBox.warning(self, "警告", "処理対象の曲が選択されていません。")
+            return
+
         # 仕様: 指定されたハイブリッド Demucs Colab へのリンクを既定ブラウザで開く
         url = QUrl("https://colab.research.google.com/gist/SyameimaruKoa/8b9c42bd3ddccfe8512376e8a43a7633/hybrid-demucs-music-source-separation.ipynb")
         if not QDesktopServices.openUrl(url):
             QMessageBox.warning(self, "エラー", "ブラウザでColabリンクを開けませんでした。")
-        else:
-            # Colabを開いた場合も完了ボタンを有効化
-            self.completed_button.setEnabled(True)
-            self._move_non_target_files_to_temp()
+            return
+
+        # 不要なファイルを一時隔離
+        self._move_non_target_files_to_temp()
+        
+        # エクスプローラーで対象フォルダを開く
+        target_dir = self._get_target_dir()
+        if target_dir:
+            self._open_target_folder(target_dir)
+
+        # 完了ボタンを有効化
+        self.completed_button.setEnabled(True)
+
+        QMessageBox.information(
+            self,
+            "Colab連携",
+            f"Google Colab を開きました。\n\n"
+            f"以下の {len(checked_names)} 曲をブラウザ上で分離処理してください:\n\n"
+            + "\n".join(checked_names) + "\n\n"
+            "処理しないファイルは 'demucs_ignore' フォルダに一時退避されました。\n"
+            "処理が完了したら「Demucs完了」ボタンを押してください。"
+        )
+    
+    def on_isolate_files(self):
+        """ファイル隔離ボタン"""
+        # チェックされた項目を集計
+        checked_names = []
+        for i in range(self.track_list.count()):
+            item = self.track_list.item(i)
+            if item.checkState() == Qt.Checked:
+                checked_names.append(item.text())
+
+        if not checked_names:
+            QMessageBox.warning(self, "警告", "隔離対象外にする（チェックする）曲が選択されていません。")
+            return
+
+        # 不要なファイルを一時隔離
+        self._move_non_target_files_to_temp()
+        
+        # エクスプローラーで対象フォルダを開く
+        target_dir = self._get_target_dir()
+        if target_dir:
+            self._open_target_folder(target_dir)
+
+        # 完了ボタンを有効化
+        self.completed_button.setEnabled(True)
+
+        QMessageBox.information(
+            self,
+            "ファイル隔離完了",
+            f"チェックされていない曲を 'demucs_ignore' フォルダに退避し、対象フォルダを開きました。\n\n"
+            f"処理対象曲:\n" + "\n".join(checked_names)
+        )
     
     def on_demucs_completed(self):
         """Demucs完了ボタン"""
@@ -415,6 +450,28 @@ class Step2DemucsPanel(QWidget):
             )
             return
 
+        # アクティブアルバムの曲に対応するものだけにフィルタリング（重複排除）
+        filtered_inst_files = []
+        seen_song_names = set()
+        for song_folder, inst_file in inst_files:
+            song_name = os.path.basename(song_folder)
+            if song_name in seen_song_names:
+                continue
+            orig_file_path = self._find_original_for_song(song_name)
+            if orig_file_path:
+                filtered_inst_files.append((song_folder, inst_file, orig_file_path))
+                seen_song_names.add(song_name)
+            else:
+                print(f"[DEBUG] 他アルバムの曲のためスキップ: {song_name}")
+
+        if not filtered_inst_files:
+            QMessageBox.warning(
+                self,
+                "エラー",
+                "選択したフォルダ内に、現在のアルバムの曲に対応するインストファイルが見つかりませんでした。"
+            )
+            return
+
         # FLAC変換・移動処理
         success_count = 0
         flac_path = self.config.get_tool_path("Flac")
@@ -433,14 +490,14 @@ class Step2DemucsPanel(QWidget):
             "インストゥルメンタル版を作成中...",
             "キャンセル",
             0,
-            len(inst_files),
+            len(filtered_inst_files),
             self
         )
         progress.setWindowTitle("処理中")
         progress.setWindowModality(Qt.WindowModal)
         progress.setMinimumDuration(0)  # 即座に表示
         
-        for idx, (song_folder, inst_file) in enumerate(inst_files):
+        for idx, (song_folder, inst_file, orig_file_path) in enumerate(filtered_inst_files):
             # キャンセルチェック
             if progress.wasCanceled():
                 QMessageBox.information(
@@ -528,10 +585,9 @@ class Step2DemucsPanel(QWidget):
             # 元のトラックのタグをコピーし、ジャンルのみ "Instrumental" に変更
             try:
                 from mutagen.flac import FLAC
-                orig_path = self._find_original_for_song(song_name)
                 dest = FLAC(output_flac)
-                if orig_path and os.path.exists(orig_path):
-                    src = FLAC(orig_path)
+                if orig_file_path and os.path.exists(orig_file_path):
+                    src = FLAC(orig_file_path)
                     # 既存タグをクリアしてコピー
                     dest.delete()
                     for k, v in src.tags.items():
@@ -545,9 +601,9 @@ class Step2DemucsPanel(QWidget):
                 dest.save()
                 
                 # state.json を更新: 元トラックに instrumentalFile を追加
-                if orig_path and self.workflow.state:
+                if orig_file_path and self.workflow.state:
                     # 元トラックのIDを探す
-                    orig_basename = os.path.basename(orig_path)
+                    orig_basename = os.path.basename(orig_file_path)
                     track_id = None
                     state = self.workflow.state.state
                     for track in state.get("tracks", []):
@@ -571,7 +627,7 @@ class Step2DemucsPanel(QWidget):
                 print(f"[ERROR] タグコピー失敗: {e}")
         
         # プログレス完了
-        progress.setValue(len(inst_files))
+        progress.setValue(len(filtered_inst_files))
         progress.close()
         
         if success_count > 0:
