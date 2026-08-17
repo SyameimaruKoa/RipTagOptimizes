@@ -924,7 +924,9 @@ class Step3TaggingPanel(QWidget):
                 # genre / comment などに Instrumental を含むか
                 def contains_key(key: str) -> bool:
                     try:
-                        vals = flac.get(key, [])
+                        vals = flac.get(key)
+                        if not vals:
+                            return False
                         return any("instrumental" in str(v).lower() for v in vals)
                     except Exception:
                         return False
