@@ -30,6 +30,23 @@ from gui.step_panels.step6_artwork import Step6ArtworkPanel
 from gui.step_panels.step7_transfer import Step7TransferPanel
 
 
+class AlbumListWidget(QListWidget):
+    """空白クリックやEscキー押下で選択解除できるQListWidget"""
+    
+    def mousePressEvent(self, event):
+        item = self.itemAt(event.pos())
+        if not item:
+            self.clearSelection()
+            self.setCurrentItem(None)
+        super().mousePressEvent(event)
+    
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key_Escape:
+            self.clearSelection()
+            self.setCurrentItem(None)
+        super().keyPressEvent(event)
+
+
 class MainWindow(QMainWindow):
     """メインウィンドウクラス"""
     
@@ -62,7 +79,7 @@ class MainWindow(QMainWindow):
         main_widget.setLayout(main_layout)
         
         # 左ペイン: アルバムリスト
-        self.album_list = QListWidget()
+        self.album_list = AlbumListWidget()
         self.album_list.setMaximumWidth(350)
         self.album_list.currentItemChanged.connect(self.on_album_selected)
         main_layout.addWidget(self.album_list)
@@ -74,13 +91,16 @@ class MainWindow(QMainWindow):
         # ステップパネルを初期化
         self.init_step_panels()
         
+        # 初期画面を新規取り込み（Step 1）に設定
+        self.step_stack.setCurrentIndex(1)
+        
         # ツールバー
         self.init_toolbar()
         
         # ステータスバー
         self.status_bar = QStatusBar()
         self.setStatusBar(self.status_bar)
-        self.status_bar.showMessage("準備完了")
+        self.status_bar.showMessage("新規取り込みを開始してください")
     
     def init_toolbar(self):
         """ツールバーを初期化"""
@@ -228,12 +248,22 @@ class MainWindow(QMainWindow):
             print(f"[ERROR] アルバムリストの更新に失敗: {e}")
         finally:
             self.album_list.blockSignals(False)
+            
+        # 以前選択していたアルバムがリストから消えた場合の処理
+        if current_selection and not self.album_list.currentItem():
+            self.current_album_folder = None
+            if self.step_stack.currentIndex() not in (0, 1):
+                self.step_stack.setCurrentIndex(1)
+                self.status_bar.showMessage("新規取り込みを開始してください")
     
     def on_album_selected(self, current, previous):
         """アルバムが選択されたときの処理"""
         print("[DEBUG] on_album_selected called")
         if not current:
-            print("[DEBUG] current is None")
+            print("[DEBUG] current is None - switching to step1")
+            self.current_album_folder = None
+            self.step_stack.setCurrentIndex(1)
+            self.status_bar.showMessage("新規取り込みを開始してください")
             return
         
         album_folder = current.data(Qt.UserRole)
@@ -277,17 +307,24 @@ class MainWindow(QMainWindow):
     
     def on_show_music_center_guide(self):
         """Music Center取り込みガイドを表示"""
-        self.step_stack.setCurrentWidget(self.step0_panel)
+        self.album_list.blockSignals(True)
         self.album_list.clearSelection()
+        self.album_list.setCurrentItem(None)
+        self.album_list.blockSignals(False)
+        self.step_stack.setCurrentWidget(self.step0_panel)
         self.current_album_folder = None
         self.status_bar.showMessage("Music Center でCDを取り込む")
     
     def on_new_import(self):
         """新規取り込みボタンが押されたときの処理"""
+        self.album_list.blockSignals(True)
+        self.album_list.clearSelection()
+        self.album_list.setCurrentItem(None)
+        self.album_list.blockSignals(False)
+        self.current_album_folder = None
         # Step1パネルをリセットして表示
         self.step1_panel.reset()
         self.step_stack.setCurrentIndex(1)  # Step1 = index 1 (Step0がindex 0)
-        self.album_list.clearSelection()
         self.status_bar.showMessage("新規取り込みを開始してください")
     
     def on_import_completed(self, album_folder: str):
@@ -581,7 +618,7 @@ class MainWindow(QMainWindow):
         self.refresh_album_list()
         self.album_list.clearSelection()
         # 初期パネルへ戻す
-        self.step_stack.setCurrentIndex(0)
+        self.step_stack.setCurrentIndex(1)
         self.status_bar.showMessage("作業を破棄しました（ゴミ箱へ移動）")
     
     def closeEvent(self, event):
