@@ -118,8 +118,19 @@ class WorkflowManager:
             if not os.path.exists(output_dir):
                 return False, "AAC出力フォルダが見つかりません"
             
-            aac_count = len([f for f in os.listdir(output_dir) if f.lower().endswith('.m4a')])
-            track_count = len(self.state.get_tracks())
+            aac_count = 0
+            for root, _, files in os.walk(output_dir):
+                aac_count += len([f for f in files if f.lower().endswith('.m4a')])
+            
+            expected_files = set()
+            for t in self.state.get_tracks():
+                final = t.get("finalFile")
+                inst = t.get("instrumentalFile")
+                if final:
+                    expected_files.add(final)
+                if inst:
+                    expected_files.add(inst)
+            track_count = len(expected_files)
             
             if aac_count < track_count:
                 return False, f"AACファイル数が不足しています ({aac_count}/{track_count})"
@@ -135,8 +146,19 @@ class WorkflowManager:
             if not os.path.exists(output_dir):
                 return False, "Opus出力フォルダが見つかりません"
             
-            opus_count = len([f for f in os.listdir(output_dir) if f.lower().endswith('.opus')])
-            track_count = len(self.state.get_tracks())
+            opus_count = 0
+            for root, _, files in os.walk(output_dir):
+                opus_count += len([f for f in files if f.lower().endswith('.opus')])
+            
+            expected_files = set()
+            for t in self.state.get_tracks():
+                final = t.get("finalFile")
+                inst = t.get("instrumentalFile")
+                if final:
+                    expected_files.add(final)
+                if inst:
+                    expected_files.add(inst)
+            track_count = len(expected_files)
             
             if opus_count < track_count:
                 return False, f"Opusファイル数が不足しています ({opus_count}/{track_count})"

@@ -426,12 +426,11 @@ class Step3TaggingPanel(QWidget):
         tracks = self.workflow.state.get_tracks()
         print(f"[DEBUG][Step3] state tracks 読込: track_count={len(tracks)}")
         
-        # 既存のoriginalFileを記録（インストファイルの重複登録を防ぐ）
         existing_original_files = {track.get("originalFile", "") for track in tracks}
-        # 処理済みの物理ファイルを記録
         processed_files = set()
-        # ボーカルトラックへの重複割当防止
         assigned_vocal_files = set()
+        assigned_inst_files = set()
+        final_tracks = []
 
         def get_tracknum_from_filename(name: str) -> int | None:
             m_num = re.match(r"^(\d{1,3})", _get_basename(name))
@@ -452,7 +451,11 @@ class Step3TaggingPanel(QWidget):
                 return bool(current and _get_basename(current) == _get_basename(candidate_file))
             return True
 
-        for i, track in enumerate(tracks):
+        # 1. ボーカル曲（非インスト曲）トラックを優先して紐づけ処理
+        vocal_track_items = [t for t in tracks if not self._is_instrumental_by_name(t.get("originalFile", "").lower())]
+        inst_track_items = [t for t in tracks if self._is_instrumental_by_name(t.get("originalFile", "").lower())]
+
+        for i, track in enumerate(vocal_track_items):
             original_file = track.get("originalFile", "")
             orig_norm = norm_title(original_file, remove_version_info=False)
             orig_norm_no_ver = norm_title(original_file, remove_version_info=True)
@@ -461,22 +464,6 @@ class Step3TaggingPanel(QWidget):
                 f"[DEBUG][Step3][TRACK] idx={i} id={track.get('id','')} original='{original_file}' "
                 f"track_num={original_track_num} orig_norm='{orig_norm}' orig_norm_no_ver='{orig_norm_no_ver}'"
             )
-            
-            # originalFileがインストファイルそのものの場合、紐づけをスキップして独立表示
-            if self._is_instrumental_by_name(original_file.lower()):
-                # 物理ファイルとして存在するか確認
-                found_original = _find_by_basename(original_file)
-                if found_original:
-                    final_filename = self._generate_final_filename(found_original)
-                    track["finalFile"] = final_filename
-                    track["currentFile"] = found_original
-                    track["isInstrumental"] = True
-                    processed_files.add(found_original)
-
-                    # 独立インストトラックとして表示
-                    self._append_mapping_row_inst_only(found_original, final_filename)
-                    print(f"[DEBUG] 独立インストトラック: {found_original} -> {final_filename}")
-                continue
             
             # 先頭番号でマッチ（ボーカル入りトラック用）
             m = re.match(r"^(\d{1,3})", original_file)
@@ -575,11 +562,11 @@ class Step3TaggingPanel(QWidget):
                 # 未検出の行
                 self._append_mapping_row_not_found(original_file)
                 print(f"[WARN][Step3][MATCH] strategy=not-found original='{original_file}'")
-                # ファイルが見つからない場合は古い（誤った）情報を残さないようクリアする
                 track["currentFile"] = ""
                 track.pop("isInstrumental", None)
                 track.pop("instrumentalFile", None)
                 track.pop("currentInstFile", None)
+                final_tracks.append(track)
                 continue
             
             assigned_vocal_files.add(new_file)
@@ -588,7 +575,6 @@ class Step3TaggingPanel(QWidget):
 
             # 同タイトルのInstパートナーを探す
             inst_partner = None
-            # new_file のタイトルから探す（original_fileのタイポが修正されている可能性があるため）
             new_norm_no_ver = norm_title(new_file, remove_version_info=True)
 
             # まず完全一致で自動検出を試す
@@ -628,7 +614,6 @@ class Step3TaggingPanel(QWidget):
                     print(f"[DEBUG][Step3][INST] 既存のinstrumentalFileを使用: {original_file} -> {inst_partner}")
                 else:
                     print(f"[DEBUG][Step3][INST] インストファイルが見つかりません: {original_file} (normalized: '{new_norm_no_ver}')")
-                    # inst関連の古い情報をクリア
                     track.pop("instrumentalFile", None)
                     track.pop("currentInstFile", None)
 
@@ -638,37 +623,31 @@ class Step3TaggingPanel(QWidget):
             # new_file がインストかどうか判定
             is_new_file_inst = self._is_instrumental_by_name(new_file.lower())
             
-            # 通常ケース: new_file を最終成果物とし、Instが別にあれば派生として表示
             track["finalFile"] = final_filename
             track["isInstrumental"] = is_new_file_inst
             
-            # インストファイルの表示判定
-            # new_fileがインストの場合は、inst_partnerは表示しない（自分自身がインスト）
             if inst_partner and inst_partner != new_file and not is_new_file_inst:
-                # インストゥルメンタル版のファイル名（現在のファイル名をそのまま使用）
                 inst_display_name = inst_partner
-                # state.jsonには最終ファイル名を記録
                 inst_final_filename = self._generate_final_filename(inst_partner)
                 track["instrumentalFile"] = inst_final_filename
                 track["currentInstFile"] = inst_partner
                 track["hasInstrumental"] = True
                 track["currentFile"] = new_file
                 processed_files.add(inst_partner)
+                assigned_inst_files.add(inst_partner)
                 
                 print(f"[DEBUG][Step3][UI] 表示に追加: {original_file} -> {final_filename} + Inst: {inst_display_name}")
                 
-                # 表示: 親トラック + 子インスト
                 self._append_mapping_row_with_inst(
                     original_file,
                     final_filename,
-                    inst_display_name  # 生のファイル名を表示
+                    inst_display_name
                 )
-                
-                # instrumentalFileとして紐づいたファイルは独立トラックとして追加しない
-                # （重複登録を防ぐため）
             else:
-                # new_file 自体が Inst の場合はバッジ表示、それ以外は通常表示
                 track["currentFile"] = new_file
+                track["hasInstrumental"] = False
+                track.pop("instrumentalFile", None)
+                track.pop("currentInstFile", None)
                 if track["isInstrumental"]:
                     self._append_mapping_row_inst_only(
                         original_file,
@@ -679,14 +658,45 @@ class Step3TaggingPanel(QWidget):
                         original_file,
                         final_filename
                     )
+            final_tracks.append(track)
         
-        # 未処理のインストファイル（state.jsonに存在しない新規Demucs生成ファイル）を独立トラックとして追加
+        # 2. 元々state.jsonに存在したインストトラックの処理
+        for track in inst_track_items:
+            original_file = track.get("originalFile", "")
+            found_original = _find_by_basename(original_file)
+            
+            if (found_original and found_original in assigned_inst_files) or (original_file in assigned_inst_files):
+                print(f"[DEBUG][Step3][INST] インストトラック '{original_file}' はボーカル曲のインストとして紐づけ済みのため独立トラックから除外")
+                continue
+            
+            if found_original and found_original in processed_files:
+                print(f"[DEBUG][Step3][INST] インストファイル '{found_original}' は既に処理済みのため独立トラックから除外")
+                continue
+
+            if found_original:
+                final_filename = self._generate_final_filename(found_original)
+                track["finalFile"] = final_filename
+                track["currentFile"] = found_original
+                track["isInstrumental"] = True
+                track["hasInstrumental"] = False
+                track.pop("instrumentalFile", None)
+                track.pop("currentInstFile", None)
+                processed_files.add(found_original)
+
+                self._append_mapping_row_inst_only(found_original, final_filename)
+                print(f"[DEBUG] 独立インストトラック: {found_original} -> {final_filename}")
+                final_tracks.append(track)
+            else:
+                self._append_mapping_row_not_found(original_file)
+                track["currentFile"] = ""
+                final_tracks.append(track)
+
+        # 3. 未処理のインストファイル（state.jsonに存在しない新規Demucs生成ファイル等）を独立トラックとして追加
         for flac_file in current_flac_files:
             if flac_file not in processed_files and self._is_instrumental_by_name(flac_file.lower()):
-                # 新規インストトラックとして追加
                 final_filename = self._generate_final_filename(flac_file)
                 new_track = {
-                    "id": f"track_{len(tracks) + 1:03d}",
+                    "id": f"track_{len(final_tracks) + 1:03d}",
                     "originalFile": flac_file,
                     "finalFile": final_filename,
                     "currentFile": flac_file,
@@ -694,23 +704,17 @@ class Step3TaggingPanel(QWidget):
                     "isInstrumental": True,
                     "hasInstrumental": False
                 }
-                tracks.append(new_track)
+                final_tracks.append(new_track)
                 processed_files.add(flac_file)
                 
-                # 表示に追加
                 self._append_mapping_row_inst_only(flac_file, final_filename)
                 print(f"[DEBUG][Step3][INST] 未処理の新規インストトラックを追加: {flac_file} -> {final_filename}")
         
-        # 独立インストトラックのトラック番号を再採番
-        # ボーカル入りトラック（isInstrumental=False）の後に連番で配置
+        # 4. 独立インストトラックのトラック番号を再採番
+        vocal_tracks = []
+        independent_inst_tracks = []
         
-        import re
-        
-        # トラックを分類
-        vocal_tracks = []  # ボーカル入りトラック
-        independent_inst_tracks = []  # 独立インストトラック
-        
-        for track in tracks:
+        for track in final_tracks:
             is_inst = track.get("isInstrumental", False)
             has_final = bool(track.get("finalFile"))
             
@@ -722,33 +726,28 @@ class Step3TaggingPanel(QWidget):
             else:
                 vocal_tracks.append(track)
         
-        # 独立インストトラックのトラック番号を再採番
         if independent_inst_tracks:
-            next_track_num = len(vocal_tracks) + 1  # ボーカル入りトラックの後から
+            next_track_num = len(vocal_tracks) + 1
             
             for inst_track in independent_inst_tracks:
                 final_file = inst_track.get("finalFile", "")
                 if not final_file:
                     continue
                 
-                # 既存のトラック番号を抽出
                 m = re.match(r"^(?:Disc \d+-)?(\d{2,3})\s+(.+)$", final_file)
                 if m:
                     old_num = m.group(1)
                     title_part = m.group(2)
-                    
-                    # 新しいトラック番号を生成
                     new_num = str(next_track_num).zfill(2)
                     new_final_file = f"{new_num} {title_part}"
-                    
                     inst_track["finalFile"] = new_final_file
                     print(f"[DEBUG][Step3][INST] 独立インストトラックのトラック番号を再採番: {old_num} -> {new_num} ({title_part})")
                     next_track_num += 1
 
-        print(f"[DEBUG][Step3] update_file_mapping 完了: assigned_vocal={len(assigned_vocal_files)}, processed_files={len(processed_files)}, final_tracks={len(tracks)}")
+        print(f"[DEBUG][Step3] update_file_mapping 完了: assigned_vocal={len(assigned_vocal_files)}, processed_files={len(processed_files)}, final_tracks={len(final_tracks)}")
         
-        # state.json に保存
-        self.workflow.state.state["tracks"] = tracks
+        # 5. state.json に保存
+        self.workflow.state.state["tracks"] = final_tracks
         self.workflow.state.save()
 
     # ------------------------
