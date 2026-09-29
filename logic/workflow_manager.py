@@ -35,9 +35,14 @@ class WorkflowManager:
         Returns:
             読み込み成功時 True
         """
+        state = StateManager(album_folder)
+        if not state.load():
+            self.current_album_folder = None
+            self.state = None
+            return False
         self.current_album_folder = album_folder
-        self.state = StateManager(album_folder)
-        return self.state.load()
+        self.state = state
+        return True
     
     def get_current_step(self) -> int:
         """現在のステップ番号を取得"""
@@ -66,19 +71,63 @@ class WorkflowManager:
         # 最大ステップチェック（Step 7で完了）
         if next_step > 7:
             print(f"[DEBUG] advance_step: Step 7 完了、COMPLETED 状態へ")
-            self.state.set_status("COMPLETED")
-            self.state.save()  # 明示的に保存
-            return True
+            previous = self.state.get_status()
+            if self.state.set_status("COMPLETED"):
+                return True
+            self.state.state["status"] = previous
+            return False
         
         # ステップを進めて保存
         result = self.state.set_current_step(next_step)
         if result:
-            self.state.save()  # 明示的に保存
             print(f"[DEBUG] advance_step: Step {next_step} に進みました（保存完了）")
         else:
+            self.state.state["currentStep"] = current
             print(f"[ERROR] advance_step: set_current_step が失敗しました")
         
         return result
+
+    def rollback_step(self) -> bool:
+        """戻す先以降の完了フラグを無効化して保存する。"""
+        if not self.state or self.get_current_step() <= 2:
+            return False
+        from copy import deepcopy
+        from .utils import sanitize_foldername
+        previous = deepcopy(self.state.state)
+        target = self.get_current_step() - 1
+        moved_paths = None
+        if target == 6 and self.current_album_folder:
+            album = sanitize_foldername(self.state.get_album_name())
+            artist = sanitize_foldername(self.state.get_artist_name())
+            final = os.path.join(self.current_album_folder, "_final_flac", artist, album)
+            source = os.path.join(self.current_album_folder, "_flac_src", album)
+            if os.path.isdir(final):
+                if os.path.exists(source):
+                    print("[ERROR] ロールバック: 元音源と最終FLACの両方が存在します")
+                    return False
+                try:
+                    os.makedirs(os.path.dirname(source), exist_ok=True)
+                    os.rename(final, source)
+                    moved_paths = (source, final)
+                except OSError as exc:
+                    print(f"[ERROR] ロールバック: FLACの復帰に失敗しました: {exc}")
+                    return False
+        completed = self.state.state.get("completedSteps", {})
+        for key in list(completed):
+            if any(key.startswith(f"step{step}_") for step in range(target, 8)):
+                del completed[key]
+        self.state.state.update(currentStep=target, status="WAITING_USER", lastError=None)
+        if target == 2:
+            self.state.state.setdefault("flags", {})["step2_skipped"] = False
+        if self.state.save():
+            return True
+        self.state.state = previous
+        if moved_paths:
+            try:
+                os.rename(*moved_paths)
+            except OSError as exc:
+                print(f"[ERROR] ロールバック: FLAC配置の復元に失敗しました: {exc}")
+        return False
     
     def can_advance_to_next_step(self) -> tuple[bool, str]:
         """
