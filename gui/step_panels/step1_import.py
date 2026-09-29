@@ -6,64 +6,42 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
     QLabel, QFileDialog, QMessageBox, QProgressDialog
 )
-from PySide6.QtCore import Signal, QThread
+from PySide6.QtCore import Signal, QThread, QTimer
 
 from logic.config_manager import ConfigManager
 from logic.workflow_manager import WorkflowManager
 from logic.state_manager import StateManager
 from logic.log_manager import get_logger
+from logic.utils import sanitize_foldername
 import shutil
 from send2trash import send2trash
 
 
 class ImportWorker(QThread):
-    """取り込み処理を別スレッドで実行（コピー→削除の2段階処理で安全性確保）"""
-    finished = Signal(bool, str)  # success, message
+    """音源をコピーする。元フォルダの整理は状態初期化の成功後に行う。"""
 
     def __init__(self, source: str, dest_folder: str):
         super().__init__()
         self.source = source
         self.dest_folder = dest_folder
+        self.result = (False, "コピーが完了していません")
 
     def run(self):
         try:
-            # 親ディレクトリを確実に作成
-            os.makedirs(os.path.dirname(self.dest_folder), exist_ok=True)
-            
-            # 既に存在する場合はエラー
+            source = os.path.normcase(os.path.realpath(self.source))
+            dest = os.path.normcase(os.path.realpath(self.dest_folder))
+            # 同一・包含関係のあるフォルダはコピーや元フォルダ整理が安全にできない。
+            if os.path.splitdrive(source)[0] == os.path.splitdrive(dest)[0]:
+                if os.path.commonpath([source, dest]) in (source, dest):
+                    raise ValueError("取り込み元と取り込み先が重複しています")
             if os.path.exists(self.dest_folder):
-                self.finished.emit(False, f"コピー先が既に存在します")
-                return
-            
-            # 安全性のため2段階処理: コピー → 元を削除
-            # 1. まずコピー
+                raise FileExistsError("コピー先が既に存在します")
+            os.makedirs(os.path.dirname(os.path.abspath(self.dest_folder)), exist_ok=True)
             shutil.copytree(self.source, self.dest_folder, dirs_exist_ok=False)
-            
-            # 2. コピー成功後のみ元フォルダを削除
-            try:
-                # 存在確認
-                if not os.path.exists(self.source):
-                    self.finished.emit(False, f"元フォルダが見つかりません (既に移動済み？)")
-                    return
-                
-                # send2trashがProcessLookupErrorを起こす場合があるので、
-                # 失敗時はshutil.rmtreeで直接削除
-                try:
-                    send2trash(self.source)
-                except (ProcessLookupError, OSError):
-                    # send2trash失敗時は直接削除（安全性は既にコピー完了しているので問題なし）
-                    shutil.rmtree(self.source)
-            except Exception as del_err:
-                # 削除失敗 = 失敗扱い（コピーは成功しているので残骸削除が必要）
-                error_type = type(del_err).__name__
-                self.finished.emit(False, f"元フォルダ削除失敗: {error_type}")
-                return
-            
-            self.finished.emit(True, "")
-        except Exception as e:
-            # コピー失敗時は元フォルダは残る（安全）
-            error_type = type(e).__name__
-            self.finished.emit(False, f"コピー失敗: {error_type}")
+            self.result = (True, "")
+        except Exception as exc:
+            # コピー途中のファイルも保持する。復旧できるデータを削除しない。
+            self.result = (False, f"コピー失敗: {exc}")
 
 
 class Step1ImportPanel(QWidget):
@@ -129,6 +107,9 @@ class Step1ImportPanel(QWidget):
         
         # 選択されたフォルダのリスト
         self.selected_sources = []
+        self.import_worker = None
+        self.import_warnings = []
+        self.importing = False
     
     def load_album(self, album_folder: str):
         """アルバムを読み込み（このパネルでは何もしない）"""
@@ -137,6 +118,8 @@ class Step1ImportPanel(QWidget):
     
     def reset(self):
         """パネルの状態をリセット（新規取り込み開始時）"""
+        if self.importing:
+            return
         self.selected_sources = []
         self.selected_folder_label.setText("選択: (なし)")
         self.import_button.setEnabled(False)
@@ -294,7 +277,7 @@ class Step1ImportPanel(QWidget):
     
     def on_import_all(self):
         """複数アルバムを順次取り込み"""
-        if not self.selected_sources:
+        if self.importing or not self.selected_sources:
             return
         
         # 作業フォルダのパス
@@ -317,8 +300,8 @@ class Step1ImportPanel(QWidget):
             self,
             "確認",
             f"{album_count}個のアルバムを取り込みますか?\n\n"
-            f"既存のフォルダと名前が重複する場合は、\n"
-            f"自動的にゴミ箱に移動されます。",
+            "コピーと進捗の初期化後に、元フォルダをゴミ箱へ移動します。\n"
+            "同名の作業フォルダがあるアルバムはスキップします。",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes
         )
@@ -336,6 +319,10 @@ class Step1ImportPanel(QWidget):
         # 取り込み処理を開始
         self.current_import_index = 0
         self.failed_imports = []
+        self.import_warnings = []
+        self.importing = True
+        self.select_button.setEnabled(False)
+        self.import_button.setEnabled(False)
         self.work_dir = work_dir
         self._import_next_album()
     
@@ -352,7 +339,7 @@ class Step1ImportPanel(QWidget):
         if not os.path.exists(source_folder):
             self.failed_imports.append((os.path.basename(source_folder), "フォルダが見つかりません"))
             self.current_import_index += 1
-            self._import_next_album()
+            QTimer.singleShot(0, self._import_next_album)
             return
         
         album_name = os.path.basename(source_folder).strip()
@@ -365,60 +352,52 @@ class Step1ImportPanel(QWidget):
         
         dest_folder = os.path.join(self.work_dir, album_name)
         
-        # 競合チェック（自動削除）
+        # 既存の作業や取り込み元を、自動的に捨てて置き換えない。
         if os.path.exists(dest_folder):
-            try:
-                send2trash(dest_folder)
-            except Exception as e:
-                self.failed_imports.append((album_name, f"既存フォルダ削除失敗: {e}"))
-                self.current_import_index += 1
-                self._import_next_album()
-                return
-        
-        # ワーカースレッドで実行
+            self.failed_imports.append((album_name, "同名の作業フォルダが存在するため保持しました"))
+            self.current_import_index += 1
+            QTimer.singleShot(0, self._import_next_album)
+            return
+
         self.import_worker = ImportWorker(source_folder, dest_folder)
-        self.import_worker.finished.connect(
-            lambda success, msg: self._on_single_import_finished(success, msg, dest_folder, album_name, artist_name)
-        )
+        # QThread本来のfinishedで、スレッド終了後に初期化・次の取り込みへ進む。
+        self.import_worker.finished.connect(self._on_copy_thread_finished)
         self.import_worker.start()
-    
-    def _on_single_import_finished(self, success, error_msg, dest_folder, album_name, artist_name):
-        """単一アルバム取り込み完了"""
-        # ロガーを取得（アルバムフォルダ設定）
+
+    def _on_copy_thread_finished(self):
+        worker = self.import_worker
+        success, message = worker.result
+        source = worker.source
+        self._on_single_import_finished(
+            success, message, worker.dest_folder, os.path.basename(source).strip(),
+            os.path.basename(os.path.dirname(source)).strip() or "Unknown", source
+        )
+
+    def _on_single_import_finished(self, success, error_msg, dest_folder, album_name, artist_name,
+                                   source_folder=None):
+        """コピーと状態初期化の両方に成功した後だけ元フォルダを整理する。"""
         logger = get_logger()
         if os.path.exists(dest_folder):
             logger.set_album_folder(dest_folder)
-        
-        if not success:
-            self.failed_imports.append((album_name, error_msg))
-            logger.error("step1", f"取り込み失敗: {album_name} - {error_msg}")
-            # 失敗した残骸を削除
-            if os.path.exists(dest_folder):
+        try:
+            if not success:
+                raise RuntimeError(error_msg)
+            if not self._initialize_album_state(dest_folder, album_name, artist_name):
+                raise RuntimeError("state.json初期化失敗。取り込み元とコピー先を保持しています")
+            if source_folder:
                 try:
-                    shutil.rmtree(dest_folder)
-                except Exception as cleanup_err:
-                    logger.warning("step1", f"失敗した残骸の削除失敗: {cleanup_err}")
-            self.current_import_index += 1
-            self._import_next_album()
-            return
-        
-        # state.json を初期化
-        if not self._initialize_album_state(dest_folder, album_name, artist_name):
-            self.failed_imports.append((album_name, "state.json初期化失敗"))
-            logger.error("step1", f"state.json初期化失敗: {album_name}")
-            # 初期化失敗時も残骸を削除
-            if os.path.exists(dest_folder):
-                try:
-                    shutil.rmtree(dest_folder)
-                except Exception as cleanup_err:
-                    logger.warning("step1", f"初期化失敗後の残骸削除失敗: {cleanup_err}")
-        else:
+                    send2trash(source_folder)
+                except Exception as exc:
+                    warning = f"{album_name}: 元フォルダを保持しました（ゴミ箱への移動失敗: {exc}）"
+                    self.import_warnings.append(warning)
+                    logger.warning("step1", warning)
             logger.info("step1", f"アルバム取り込み完了: {album_name} (アーティスト: {artist_name})")
-        
-        # 次へ
+        except Exception as exc:
+            self.failed_imports.append((album_name, str(exc)))
+            logger.error("step1", f"取り込み失敗、ファイルを保持: {album_name} - {exc}")
         self.current_import_index += 1
-        self._import_next_album()
-    
+        QTimer.singleShot(0, self._import_next_album)
+
     def _initialize_album_state(self, dest_folder, album_name, artist_name):
         """アルバムのstate.jsonを初期化"""
         # ファイル名をサニタイズ
@@ -438,10 +417,13 @@ class Step1ImportPanel(QWidget):
                     src = os.path.join(dest_folder, file)
                     dst = os.path.join(flac_src_dir, file)
                     try:
-                        os.replace(src, dst)
+                        if os.path.exists(dst):
+                            raise FileExistsError(f"FLAC移動先が既に存在します: {dst}")
+                        os.rename(src, dst)
                         moved_count += 1
                     except Exception as e:
                         print(f"[WARN] FLAC移動失敗: {file}: {e}")
+                        return False
         except:
             return False
 
@@ -463,42 +445,20 @@ class Step1ImportPanel(QWidget):
         if not state.initialize(album_name, artist_name, flac_files):
             return False
             
-        # 初期状態に自動検出（Off Vocalや指定キーワードの除外）を適用する
-        try:
-            from logic.demucs_detector import detect_demucs_targets
-            keywords = self.config.get_demucs_keywords()
-            targets = detect_demucs_targets(flac_files, keywords)
-            
-            tracks = state.get_tracks()
-            updated = False
-            for track in tracks:
-                fname = track.get("originalFile")
-                if fname in targets and not targets[fname]:
-                    track["demucsTarget"] = False
-                    updated = True
-            
-            if updated:
-                state.state["tracks"] = tracks
-                state.save()
-        except Exception as e:
-            print(f"[WARN] 初期化時の自動検出に失敗しました: {e}")
-        
-        # Step1完了 → Step2へ自動進行
-        # まずworkflowにアルバムをロード
-        if self.workflow.load_album(dest_folder):
-            # ステップを進める
-            if self.workflow.advance_step():
-                print(f"[INFO] Album '{album_name}' advanced to Step 2")
-            else:
-                print(f"[WARN] Failed to advance step for '{album_name}'")
-        else:
-            print(f"[WARN] Failed to load album for step advancement: '{album_name}'")
-        
-        return True
-    
+        from logic.demucs_detector import detect_demucs_targets
+        targets = detect_demucs_targets(flac_files, self.config.get_demucs_keywords())
+        for track in state.get_tracks():
+            track["demucsTarget"] = targets.get(track["originalFile"], True)
+        state.state["currentStep"] = 2
+        if not state.save():
+            return False
+        return self.workflow.load_album(dest_folder)
+
     def _on_all_imports_completed(self):
         """全アルバムの取り込み完了"""
         self.progress.close()
+        self.importing = False
+        self.select_button.setEnabled(True)
         
         success_count = len(self.selected_sources) - len(self.failed_imports)
         
@@ -517,6 +477,9 @@ class Step1ImportPanel(QWidget):
                 f"{success_count}個のアルバムを取り込みました!"
             )
         
+        if self.import_warnings:
+            QMessageBox.warning(self, "元フォルダを保持", "\n".join(self.import_warnings))
+
         # リセット
         self.selected_sources = []
         self.selected_folder_label.setText("選択: (なし)")
@@ -527,18 +490,4 @@ class Step1ImportPanel(QWidget):
             self.import_completed.emit("")  # 空文字列で全体更新を促す
     
     def _sanitize_foldername(self, name: str) -> str:
-        """フォルダ名に使用できない文字を全角等に置換"""
-        replacements = {
-            '\\': '¥',
-            '/': '／',
-            ':': '：',
-            '*': '＊',
-            '?': '？',
-            '"': '"',
-            '<': '＜',
-            '>': '＞',
-            '|': '｜'
-        }
-        for char, replacement in replacements.items():
-            name = name.replace(char, replacement)
-        return name
+        return sanitize_foldername(name)

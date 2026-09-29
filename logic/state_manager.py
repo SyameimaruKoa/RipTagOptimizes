@@ -3,6 +3,7 @@ state.json の読み書きを管理するモジュール
 """
 import json
 import os
+import tempfile
 from typing import Optional, Any
 from datetime import datetime
 
@@ -22,7 +23,10 @@ class StateManager:
         
         try:
             with open(self.state_path, 'r', encoding='utf-8') as f:
-                self.state = json.load(f)
+                state = json.load(f)
+            if not isinstance(state, dict):
+                raise ValueError("state.json のルートはオブジェクトである必要があります")
+            self.state = state
             return True
         except Exception as e:
             print(f"[ERROR] state.json 読み込みエラー: {e}")
@@ -30,13 +34,27 @@ class StateManager:
     
     def save(self) -> bool:
         """state.json を保存する"""
+        temp_path = None
         try:
-            with open(self.state_path, 'w', encoding='utf-8') as f:
-                json.dump(self.state, f, ensure_ascii=False, indent=2)
+            data = json.dumps(self.state, ensure_ascii=False, indent=2)
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8',
+                                             dir=self.album_folder, prefix='.state-',
+                                             suffix='.tmp', delete=False) as f:
+                temp_path = f.name
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, self.state_path)
             return True
         except Exception as e:
             print(f"[ERROR] state.json 保存エラー: {e}")
             return False
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                try:
+                    os.unlink(temp_path)
+                except OSError as e:
+                    print(f"[WARNING] 一時状態ファイルの削除に失敗しました: {e}")
     
     def initialize(self, album_name: str, artist_name: str, flac_files: list[str]) -> bool:
         """新規アルバムの state.json を初期化"""

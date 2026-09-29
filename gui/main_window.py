@@ -370,6 +370,16 @@ class MainWindow(QMainWindow):
         
         current_step = self.workflow.get_current_step()
         print(f"[DEBUG] on_step_completed: 現在のステップ = {current_step}")
+
+        if current_step == 7 and self.current_album_folder and not os.path.exists(self.current_album_folder):
+            # Step 7のゴミ箱移動後は、存在しないstate.jsonへ保存しない。
+            self.current_album_folder = None
+            self.workflow.state = None
+            self.workflow.current_album_folder = None
+            self.refresh_album_list()
+            self.step_stack.setCurrentIndex(1)
+            self.status_bar.showMessage("転送完了。作業フォルダをゴミ箱へ移動しました")
+            return
         
         # 次のステップに進む
         if self.workflow.advance_step():
@@ -460,10 +470,11 @@ class MainWindow(QMainWindow):
         # 一括処理ダイアログを表示
         from gui.batch_process_dialog import BatchProcessDialog
         dialog = BatchProcessDialog(album_folders, self.config, self)
-        if dialog.exec():
-            # 完了後、アルバムリストを再スキャン
-            self.refresh_album_list()
-            self.status_bar.showMessage(f"一括処理完了", 5000)
+        dialog.exec()
+        self.refresh_album_list()
+        # バッチが進めた状態を現在のパネルにも反映する。
+        self.current_album_folder = None
+        self.on_album_selected(self.album_list.currentItem(), None)
     
     def on_rollback_step(self):
         """選択中アルバムを前のステップに戻す"""
@@ -518,14 +529,8 @@ class MainWindow(QMainWindow):
         
         # ロールバック実行
         try:
-            # 現在のステップの完了フラグをクリア
-            step_key = f"step{current_step}_completed"
-            if step_key in temp_workflow.state.state.get("completedSteps", {}):
-                del temp_workflow.state.state["completedSteps"][step_key]
-            
-            # ステップを戻す
-            temp_workflow.state.set_current_step(prev_step)
-            temp_workflow.state.save()
+            if not temp_workflow.rollback_step():
+                raise RuntimeError("ロールバック状態の保存に失敗しました")
             
             # UIを更新
             self.refresh_album_list()
@@ -586,13 +591,14 @@ class MainWindow(QMainWindow):
         # WorkDir の配下か安全確認
         work_dir = self.config.get_directory("WorkDir") or ""
         try:
-            norm_target = os.path.abspath(target_folder)
-            norm_work = os.path.abspath(work_dir)
-            if not norm_target.startswith(norm_work):
+            norm_target = os.path.normcase(os.path.realpath(target_folder))
+            norm_work = os.path.normcase(os.path.realpath(work_dir))
+            if not work_dir or norm_target == norm_work or os.path.commonpath([norm_target, norm_work]) != norm_work:
                 QMessageBox.critical(self, "作業破棄", "作業フォルダ配下以外は破棄できません。")
                 return
-        except Exception:
-            pass
+        except (OSError, ValueError):
+            QMessageBox.critical(self, "作業破棄", "作業フォルダの場所を確認できません。")
+            return
 
         album_name = os.path.basename(target_folder)
         reply = QMessageBox.question(
@@ -623,6 +629,10 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """ウィンドウを閉じるときの処理"""
+        if self.step1_panel.importing:
+            QMessageBox.warning(self, "取り込み中", "取り込みが終了するまでお待ちください。")
+            event.ignore()
+            return
         # 実行中のプロセスがあれば警告
         reply = QMessageBox.question(
             self,

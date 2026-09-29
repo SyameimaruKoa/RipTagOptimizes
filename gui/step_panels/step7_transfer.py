@@ -502,7 +502,7 @@ class Step7TransferPanel(QWidget):
         # 設定ファイルパスを取得（オプション）
         config_file = None
         try:
-            config_file = self.config.get_setting("freefilesync_config")
+            config_file = self.config.get_tool_path("FreeFileSync_Config")
             if config_file:
                 # 環境変数を展開
                 config_file = self.config.expand_path(config_file)
@@ -536,13 +536,8 @@ class Step7TransferPanel(QWidget):
         )
         
         if reply == QMessageBox.Yes:
-            # ステップ完了フラグを設定
-            if self.workflow.state:
-                self.workflow.state.mark_step_completed("step7_transfer")
-                print("[DEBUG] Step7: ステップ完了フラグを設定しました")
-            
-            # 作業フォルダを削除
-            self._delete_work_folder()
+            if not self._delete_work_folder():
+                return
             
             # Step完了シグナルを発行
             self.step_completed.emit()
@@ -551,7 +546,7 @@ class Step7TransferPanel(QWidget):
     def _delete_work_folder(self):
         """作業フォルダを削除（内部処理）- send2trash でゴミ箱へ"""
         if not self.album_folder or not os.path.exists(self.album_folder):
-            return
+            return False
         
         try:
             from send2trash import send2trash
@@ -563,29 +558,13 @@ class Step7TransferPanel(QWidget):
                 f"作業フォルダをゴミ箱へ移動しました。\n\n"
                 f"フォルダ: {os.path.basename(self.album_folder)}"
             )
+            return True
         except Exception as e:
-            # send2trash 失敗時は shutil.rmtree でフォールバック
-            print(f"[Step7] send2trash 失敗、shutil.rmtree でリトライ: {e}")
-            try:
-                import shutil
-                shutil.rmtree(self.album_folder)
-                print(f"[Step7] 作業フォルダを削除しました（shutil.rmtree）: {self.album_folder}")
-                QMessageBox.information(
-                    self,
-                    "完了",
-                    f"作業フォルダを削除しました。\n\n"
-                    f"フォルダ: {os.path.basename(self.album_folder)}"
-                )
-            except Exception as e2:
-                # 両方失敗の場合のみユーザーに通知
-                print(f"[Step7] 作業フォルダの削除に失敗: {e2}")
-                QMessageBox.warning(
-                    self,
-                    "警告",
-                    f"作業フォルダの削除に失敗しました。\n\n"
-                    f"手動で削除してください:\n{self.album_folder}\n\n"
-                    f"エラー: {e2}"
-                )
+            QMessageBox.warning(
+                self, "警告",
+                f"ゴミ箱への移動に失敗しました。作業フォルダは保持します。\n\n{self.album_folder}\n\n{e}"
+            )
+            return False
     
     def _sanitize_foldername(self, name: str) -> str:
         return sanitize_foldername(name)

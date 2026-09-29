@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QComboBox, QMessageBox, QHeaderView
 )
 from PySide6.QtCore import Qt
+from copy import deepcopy
 
 
 class ManualMappingDialog(QDialog):
@@ -14,7 +15,7 @@ class ManualMappingDialog(QDialog):
     
     def __init__(self, tracks, actual_files, parent=None):
         super().__init__(parent)
-        self.tracks = tracks.copy()  # トラック情報のコピー
+        self.tracks = deepcopy(tracks)
         self.actual_files = actual_files  # 実際のファイル一覧
         
         self.setWindowTitle("手動紐づけ")
@@ -176,3 +177,15 @@ class ManualMappingDialog(QDialog):
                 self.tracks[row]["currentFile"] = current_file
         
         return self.tracks
+
+    def accept(self):
+        assigned = set()
+        for row in range(self.table.rowCount()):
+            combo = self.table.cellWidget(row, 1)
+            current = combo.currentText() if isinstance(combo, QComboBox) else ""
+            if current and current.casefold() in assigned:
+                QMessageBox.warning(self, "重複した紐づけ", f"同じファイルが複数の曲に選択されています:\n{current}")
+                return
+            if current:
+                assigned.add(current.casefold())
+        super().accept()

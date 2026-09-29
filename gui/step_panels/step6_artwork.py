@@ -188,7 +188,9 @@ class Step6ArtworkPanel(QWidget):
             return
         self.lbl_result.setText(f"生成: {os.path.relpath(p1, self.album_folder)}, {os.path.relpath(p2, self.album_folder)}")
         if self.workflow.state:
-            self.workflow.state.set_artwork(True)
+            if not self.workflow.state.set_artwork(True):
+                QMessageBox.warning(self, "保存エラー", "アートワークの状態を保存できませんでした。")
+                return
         
         # 最適化完了後、自動的にAAC/Opusに埋め込む
         self._auto_embed_artwork()
@@ -232,12 +234,13 @@ class Step6ArtworkPanel(QWidget):
 
         return candidates[0]
 
-    def _auto_embed_artwork(self):
+    def _auto_embed_artwork(self, show_result=True) -> bool:
         """最適化完了後に自動的にAAC/Opusへアートワークを埋め込む"""
         if not self.album_folder or not self.workflow.state:
-            return
+            return False
         
         results = []
+        succeeded = True
         
         # AAC に JPG を埋め込み
         jpg_img = self._cover_jpg()
@@ -256,6 +259,7 @@ class Step6ArtworkPanel(QWidget):
                         aac_ok += 1
                     else:
                         aac_err += 1
+                        succeeded = False
                         print(f"[WARN] AAC embed failed: {name}: {err}")
                 results.append(f"AAC (JPG): {aac_ok}成功 / {aac_err}失敗")
             else:
@@ -278,16 +282,18 @@ class Step6ArtworkPanel(QWidget):
                         opus_ok += 1
                     else:
                         opus_err += 1
+                        succeeded = False
                         print(f"[WARN] Opus embed failed: {name}: {err}")
                 results.append(f"Opus (WebP): {opus_ok}成功 / {opus_err}失敗")
             else:
                 print(f"[INFO] Opus出力フォルダが存在しません: {opus_dir}")
         
         # 結果をユーザーに通知
-        if results:
+        if results and (show_result or not succeeded):
             result_msg = "\n".join(results)
-            QMessageBox.information(self, "アートワーク埋め込み完了", 
-                                  f"最適化ファイルを自動埋め込みしました:\n\n{result_msg}")
+            notify = QMessageBox.information if succeeded else QMessageBox.warning
+            notify(self, "アートワーク埋め込み結果", f"{result_msg}")
+        return succeeded
 
     def on_embed_aac(self):
         if not self.album_folder or not self.workflow.state:
@@ -411,7 +417,7 @@ class Step6ArtworkPanel(QWidget):
         self._launch_mp3tag(opus_dir)
 
     def on_complete(self):
-        if not self.album_folder:
+        if not self.album_folder or not self.workflow.state:
             return
         
         # hasArtwork == false の場合はスキップ確認
@@ -427,7 +433,9 @@ class Step6ArtworkPanel(QWidget):
             if reply == QMessageBox.Yes:
                 # スキップ時もステップ完了フラグを設定
                 if self.workflow.state:
-                    self.workflow.state.mark_step_completed("step6_artwork")
+                    if not self.workflow.state.mark_step_completed("step6_artwork"):
+                        QMessageBox.warning(self, "保存エラー", "完了状態を保存できませんでした。")
+                        return
                     print("[DEBUG] Step6: アートワークなしでスキップ、ステップ完了フラグを設定しました")
                 self.step_completed.emit()
                 print("[DEBUG] Step6: step_completed シグナルを発行しました（スキップ）")
@@ -438,11 +446,15 @@ class Step6ArtworkPanel(QWidget):
         if not (os.path.exists(jpg) and os.path.exists(webp)):
             QMessageBox.warning(self, "不足", "cover.jpg / cover.webp を生成後に完了してください。")
             return
+
+        if not self._auto_embed_artwork(show_result=False):
+            return
         
         # ステップ完了フラグを設定
         if self.workflow.state:
-            self.workflow.state.set_artwork(True)
-            self.workflow.state.mark_step_completed("step6_artwork")
+            if not self.workflow.state.set_artwork(True) or not self.workflow.state.mark_step_completed("step6_artwork"):
+                QMessageBox.warning(self, "保存エラー", "完了状態を保存できませんでした。")
+                return
             print("[DEBUG] Step6: ステップ完了フラグを設定しました")
         
         self.step_completed.emit()
