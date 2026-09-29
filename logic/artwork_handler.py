@@ -268,19 +268,48 @@ def ensure_artwork_resized_outputs(album_folder: str, magick_path: str, source_i
     _artwork_resized/cover.jpg, cover.webp を生成（既存なら上書き）
     Returns: (ok, jpg_path, webp_path or err)
     """
+    import shutil
+    import tempfile
+    staging = None
+    preserve_staging = False
+    published = []
+    backups = {}
     try:
         out_dir = os.path.join(album_folder, "_artwork_resized")
         os.makedirs(out_dir, exist_ok=True)
         jpg_path = os.path.join(out_dir, "cover.jpg")
         webp_path = os.path.join(out_dir, "cover.webp")
-
-        ok1, err1 = resize_artwork_with_magick(magick_path, source_image, jpg_path, width=width, quality=jpg_q, format='jpg')
-        if not ok1:
-            return False, err1, ""
-        # webp
-        ok2, err2 = resize_artwork_with_magick(magick_path, source_image, webp_path, width=width, quality=webp_q, format='webp')
-        if not ok2:
-            return False, err2, ""
+        staging = tempfile.mkdtemp(dir=out_dir, prefix=".artwork-")
+        pairs = [(jpg_path, 'jpg', jpg_q), (webp_path, 'webp', webp_q)]
+        for destination, image_format, quality in pairs:
+            temporary = os.path.join(staging, os.path.basename(destination))
+            ok, error = resize_artwork_with_magick(magick_path, source_image, temporary,
+                                                   width=width, quality=quality, format=image_format)
+            if not ok:
+                return False, error, ""
+            if not os.path.isfile(temporary) or os.path.getsize(temporary) == 0:
+                return False, f"画像が生成されませんでした: {image_format}", ""
+            backup = os.path.join(staging, "old-" + os.path.basename(destination))
+            if os.path.exists(destination):
+                shutil.copy2(destination, backup)
+                backups[destination] = backup
+        # 両方の生成後に公開する。2枚目の置換失敗時には1枚目を元へ戻す。
+        for destination, _, _ in pairs:
+            os.replace(os.path.join(staging, os.path.basename(destination)), destination)
+            published.append(destination)
         return True, jpg_path, webp_path
     except Exception as e:
+        for destination in reversed(published):
+            try:
+                if destination in backups:
+                    os.replace(backups[destination], destination)
+                else:
+                    os.remove(destination)
+            except OSError:
+                preserve_staging = True
+        if preserve_staging:
+            return False, f"{e}（復元用ファイルを保持: {staging}）", ""
         return False, str(e), ""
+    finally:
+        if staging and not preserve_staging:
+            shutil.rmtree(staging, ignore_errors=True)

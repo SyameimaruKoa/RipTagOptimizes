@@ -99,11 +99,12 @@ def extract_instrumental_files(demucs_folder: str) -> list[tuple[str, str]]:
     
     # 再帰的にすべてのサブフォルダを走査
     for root, dirs, files in os.walk(demucs_folder):
-        for file in files:
-            file_lower = file.lower()
-            # no_vocals.wav または minus_vocals.flac を検出
-            if file_lower in INSTRUMENTAL_FILENAMES:
-                inst_file_path = os.path.join(root, file)
-                results.append((root, inst_file_path))
+        dirs[:] = sorted(d for d in dirs if d != "demucs_ignore" and not d.startswith(".demucs-import-"))
+        by_name = {name.lower(): name for name in files}
+        # 同一曲フォルダに両形式がある場合はFLACを優先する。
+        for name in ("no_vocals.flac", "minus_vocals.flac", "no_vocals.wav", "minus_vocals.wav"):
+            if name in by_name:
+                results.append((root, os.path.join(root, by_name[name])))
+                break
                 
     return results

@@ -331,84 +331,36 @@ class Step3TaggingPanel(QWidget):
             matches = [f for f in current_flac_files if _get_basename(f) == target]
             return matches[0] if len(matches) == 1 else None
 
-        # 1) 先頭のトラック番号で紐づけ辞書を作る (最優先)
-        #    同じトラック番号で「(Inst)」と通常版が両方ある場合は Inst を優先
         import re
-        by_tracknum: dict[int, str] = {}
-        by_title_no_ver_vocal: dict[str, list[str]] = {}
+        import difflib
 
-        def prefer_normal(existing: str | None, candidate: str) -> str:
-            # 既存が通常版なら維持、候補が通常版なら置換、どちらもInstなら候補で上書き
-            if existing:
-                ex_is_inst = self._is_instrumental_by_name(_get_basename(existing).lower())
-            else:
-                ex_is_inst = True # 既存がない場合は通常版の方を優先して受け入れるためダミーでTrue
-            cand_is_inst = self._is_instrumental_by_name(_get_basename(candidate).lower())
-            if not existing:
-                return candidate
-            if not ex_is_inst:
-                return existing  # 既に通常版を採用済み
-            if not cand_is_inst:
-                return candidate  # 通常版を優先して採用
-            return candidate      # どちらもInstなら最後のもの
+        def track_key(name):
+            match = re.match(r"^(?:Disc\s+(\d+)-)?(\d{1,3})(?=\D|$)", _get_basename(name), re.I)
+            return (int(match.group(1) or 1), int(match.group(2))) if match else None
 
-        for fname in current_flac_files:
-            m = re.match(r"^(\d{1,3})\s*[-．\. ]?\s*", _get_basename(fname))
-            if m:
-                try:
-                    idx = int(m.group(1))
-                    prev = by_tracknum.get(idx)
-                    by_tracknum[idx] = prefer_normal(prev, fname)
-                except ValueError:
-                    pass
-
-        # 2) トラック番号が無い/重複時のフォールバック: タイトル正規化での一致
-        def norm_title(name: str, remove_version_info: bool = False) -> str:
-            """
-            ファイル名を正規化してマッチングに使用
-            remove_version_info: Trueの場合はバージョン情報も削除（インスト検索用）
-            """
+        # バージョン違いを区別したタイトル正規化。
+        def norm_title(name: str) -> str:
+            """曲番号とインスト表記を除去し、バージョン名は保持する。"""
             base = _get_basename(name)
             base = re.sub(r"\.[^.]+$", "", base)            # 拡張子除去
-            base = re.sub(r"^(\d{1,3})\s*[-．\. ]?\s*", "", base)  # 先頭番号除去
+            base = re.sub(r"^(?:Disc\s+\d+-)?(\d{1,3})\s*[-．\. ]?\s*", "", base, flags=re.I)  # 先頭番号除去
             # インスト関連の括弧を除去
             base = re.sub(r"\s*\((?i:inst|off\s*vocal|instrumental|stemroller)\)\s*", "", base)
             
-            if remove_version_info:
-                # バージョン情報も削除（M@STER VERSION, GAME VERSION, オリジナル・カラオケなど）
-                base = re.sub(r"\s*\((?i:m@ster\s*version|game\s*version|original\s*version|オリジナル[・・]カラオケ|カラオケ)\)\s*", "", base)
-                # その他の末尾括弧も削除
-                base = re.sub(r"\s*(\([^)]*\)\s*)+$", "", base)
-            
             return base.strip().lower()
 
-        by_title: dict[str, str] = {}
-        by_title_inst: dict[str, list[str]] = {}
-        
-        # 元曲ファイル名からトラック番号なしのタイトルへのマッピング
-        # 例: "02-虹.flac" -> "虹"
-        original_to_title_map: dict[str, str] = {}
-        
-        for f in current_flac_files:
-            # 通常マッチング: バージョン情報を保持
-            key = norm_title(f, remove_version_info=False)
-            prev = by_title.get(key)
-            by_title[key] = prefer_normal(prev, f)
-
-            if not self._is_instrumental_by_name(f.lower()):
-                key_no_ver_vocal = norm_title(f, remove_version_info=True)
-                if key_no_ver_vocal not in by_title_no_ver_vocal:
-                    by_title_no_ver_vocal[key_no_ver_vocal] = []
-                by_title_no_ver_vocal[key_no_ver_vocal].append(f)
-
-            # バージョンを保持したタイトルごとに全候補を残す。
-            if self._is_instrumental_by_name(f.lower()):
-                by_title_inst.setdefault(norm_title(f), []).append(f)
+        by_tracknum = {}
+        by_title = {}
+        by_title_inst = {}
+        for name in current_flac_files:
+            if self._is_instrumental_by_name(name.lower()):
+                by_title_inst.setdefault(norm_title(name), []).append(name)
             else:
-                # 元曲の場合、トラック番号なしのタイトルをマッピング
-                key_no_ver = norm_title(f, remove_version_info=True)
-                original_to_title_map[key_no_ver] = f
-        
+                by_title.setdefault(norm_title(name), []).append(name)
+                key = track_key(name)
+                if key is not None:
+                    by_tracknum.setdefault(key, []).append(name)
+
         # トラック情報を更新
         tracks = self.workflow.state.get_tracks()
         print(f"[DEBUG][Step3] state tracks 読込: track_count={len(tracks)}")
@@ -419,130 +371,72 @@ class Step3TaggingPanel(QWidget):
         assigned_inst_files = set()
         final_tracks = []
 
-        def get_tracknum_from_filename(name: str) -> int | None:
-            m_num = re.match(r"^(\d{1,3})", _get_basename(name))
-            if not m_num:
-                return None
-            try:
-                return int(m_num.group(1))
-            except ValueError:
-                return None
+        # 有効な既存対応を先に予約し、別の曲の自動推測で奪わない。
+        vocal_owners = {}
+        inst_owners = {}
+        for track in tracks:
+            for keys, owners in [(("currentFile", "originalFile"), vocal_owners),
+                                 (("currentInstFile", "instrumentalFile"), inst_owners)]:
+                for key in keys:
+                    stored = track.get(key)
+                    found = _find_by_basename(stored) if stored else None
+                    if found:
+                        owners.setdefault(found, set()).add(id(track))
+                        break
 
-        def is_vocal_candidate_available(track_obj: dict, candidate_file: str | None) -> bool:
-            if not candidate_file:
-                return False
-            if self._is_instrumental_by_name(candidate_file.lower()):
-                return False
-            if candidate_file in assigned_vocal_files:
-                current = track_obj.get("currentFile", "")
-                return bool(current and _get_basename(current) == _get_basename(candidate_file))
-            return True
+        def available(track, candidate, assigned, owners):
+            return candidate is not None and candidate not in assigned and (
+                not owners.get(candidate) or owners[candidate] == {id(track)}
+            )
+
+        def is_vocal_candidate_available(track, candidate):
+            return available(track, candidate, assigned_vocal_files, vocal_owners) and not self._is_instrumental_by_name(candidate.lower())
+
+        def same_disc(original, candidate):
+            first, second = track_key(original), track_key(candidate)
+            return first is None or second is None or first[0] == second[0]
 
         # 1. ボーカル曲（非インスト曲）トラックを優先して紐づけ処理
         vocal_track_items = [t for t in tracks if not self._is_instrumental_by_name(t.get("originalFile", "").lower())]
         inst_track_items = [t for t in tracks if self._is_instrumental_by_name(t.get("originalFile", "").lower())]
 
-        for i, track in enumerate(vocal_track_items):
+        for track in vocal_track_items:
             original_file = track.get("originalFile", "")
-            orig_norm = norm_title(original_file, remove_version_info=False)
-            orig_norm_no_ver = norm_title(original_file, remove_version_info=True)
-            original_track_num = get_tracknum_from_filename(original_file)
-            print(
-                f"[DEBUG][Step3][TRACK] idx={i} id={track.get('id','')} original='{original_file}' "
-                f"track_num={original_track_num} orig_norm='{orig_norm}' orig_norm_no_ver='{orig_norm_no_ver}'"
-            )
-            
-            # 先頭番号でマッチ（ボーカル入りトラック用）
-            m = re.match(r"^(\d{1,3})", original_file)
+            orig_norm = norm_title(original_file)
+            original_track_num = track_key(original_file)
             new_file = None
-            if m:
-                try:
-                    idx = int(m.group(1))
-                    candidate = by_tracknum.get(idx)
-                    # トラック番号だけが変わった場合に誤紐づけしないよう、タイトル正規化で一致確認
-                    if candidate is not None:
-                        cand_norm = norm_title(candidate, remove_version_info=False)
-                        # 候補がインストファイルの場合は除外（ボーカル入りを優先）
-                        if not self._is_instrumental_by_name(candidate.lower()) and is_vocal_candidate_available(track, candidate):
-                            import difflib
-                            # 完全一致、または類似度が一定以上（タイポ修正等）なら許容する
-                            if (cand_norm == orig_norm or not orig_norm 
-                                    or difflib.SequenceMatcher(None, cand_norm, orig_norm).ratio() > 0.4):
-                                new_file = candidate
-                                print(f"[DEBUG][Step3][MATCH] strategy=tracknum idx={idx} candidate='{candidate}'")
-                            else:
-                                # 番号マッチは不一致と見なし、タイトルで改めて探す
-                                new_file = None
-                                print(f"[DEBUG][Step3][MATCH] strategy=tracknum-rejected idx={idx} candidate='{candidate}' cand_norm='{cand_norm}'")
-                        else:
-                            new_file = None
-                            print(f"[DEBUG][Step3][MATCH] strategy=tracknum-skip idx={idx} candidate='{candidate}' reason=inst_or_assigned")
-                except ValueError:
-                    new_file = None
-            # タイトル正規化でマッチ（インストファイルを除外）
-            if not new_file:
-                candidate = by_title.get(orig_norm)
-                if candidate and is_vocal_candidate_available(track, candidate):
-                    new_file = candidate
-                    print(f"[DEBUG][Step3][MATCH] strategy=title-exact candidate='{candidate}'")
-                else:
-                    # バージョン情報を除いたキーで一意に特定できる場合のみ採用
-                    vocal_candidates_no_ver = [
-                        path for path in by_title_no_ver_vocal.get(orig_norm_no_ver, [])
-                        if is_vocal_candidate_available(track, path)
-                    ]
-                    if len(vocal_candidates_no_ver) == 1:
-                        new_file = vocal_candidates_no_ver[0]
-                        print(f"[DEBUG][Step3][MATCH] strategy=title-no-ver-unique candidate='{new_file}'")
-                    elif len(vocal_candidates_no_ver) > 1:
-                        print(f"[WARN][Step3][MATCH] strategy=title-no-ver-ambiguous key='{orig_norm_no_ver}' candidates={vocal_candidates_no_ver}")
+            strategy = "not-found"
+            for key in ("currentFile", "originalFile"):
+                stored = track.get(key)
+                candidate = _find_by_basename(stored) if stored else None
+                if is_vocal_candidate_available(track, candidate):
+                    new_file, strategy = candidate, key
+                    break
 
-            # トラック番号が付いている曲は、他番号への誤紐づけ防止のため fuzzy を抑制
-            allow_fuzzy = original_track_num is None
-            if not new_file and allow_fuzzy:
-                # difflibを使って類似タイトルを探す
-                import difflib
-                best_match = None
-                best_ratio = 0
-                for title_key, file_path in by_title.items():
-                    if is_vocal_candidate_available(track, file_path):
-                        ratio = difflib.SequenceMatcher(None, title_key, orig_norm).ratio()
-                        if ratio > best_ratio and ratio >= 0.4:
-                            best_ratio = ratio
-                            best_match = file_path
-                if best_match:
-                    new_file = best_match
-                    print(f"[DEBUG][Step3][MATCH] strategy=fuzzy best_match='{best_match}' best_ratio={best_ratio}")
-            elif not new_file:
-                print(f"[DEBUG][Step3][MATCH] strategy=fuzzy-skipped reason=has_track_number original='{original_file}'")
+            if new_file is None and original_track_num is not None:
+                candidates = [name for name in by_tracknum.get(original_track_num, [])
+                              if is_vocal_candidate_available(track, name) and
+                              (norm_title(name) == orig_norm or
+                               difflib.SequenceMatcher(None, norm_title(name), orig_norm).ratio() >= 0.85)]
+                if len(candidates) == 1:
+                    new_file, strategy = candidates[0], "tracknum-unique"
 
-            # マッチしない場合は、従来の安全策: 同名が存在すればそれを使う
-            if not new_file:
-                found_original = _find_by_basename(original_file)
-                if found_original:
-                    if not self._is_instrumental_by_name(found_original.lower()) and is_vocal_candidate_available(track, found_original):
-                        new_file = found_original
-                        print(f"[DEBUG][Step3][MATCH] strategy=basename candidate='{found_original}'")
+            if new_file is None:
+                candidates = [name for name in by_title.get(orig_norm, [])
+                              if is_vocal_candidate_available(track, name) and same_disc(original_file, name)]
+                if len(candidates) == 1:
+                    new_file, strategy = candidates[0], "title-unique"
 
-            # もし全てのマッチングに失敗した場合でも、現在設定されている currentFile が有効（ディスクに存在し、かつ誤ってInstが割り当てられていない）なら、それを尊重する
-            if not new_file:
-                old_curr = track.get("currentFile", "")
-                found_old = _find_by_basename(old_curr) if old_curr else None
-                if found_old and not self._is_instrumental_by_name(found_old.lower()) and is_vocal_candidate_available(track, found_old):
-                    new_file = found_old
-                    print(f"[DEBUG][Step3][MATCH] strategy=currentFile candidate='{found_old}'")
-                elif old_curr:
-                    base_dir = self.album_folder
-                    if self.workflow.state:
-                        raw_dirname = self.workflow.state.get_path('rawFlacSrc') or '_flac_src'
-                        album_name = self.workflow.state.get_album_name()
-                        candidate_dir = os.path.join(self.album_folder, raw_dirname, self._sanitize_foldername(album_name))
-                        if os.path.isdir(candidate_dir):
-                            base_dir = candidate_dir
-                    check_path = os.path.join(base_dir, old_curr) if not os.path.isabs(old_curr) else old_curr
-                    if os.path.exists(check_path) and not self._is_instrumental_by_name(old_curr.lower()):
-                        new_file = old_curr
-                        print(f"[DEBUG][Step3][MATCH] strategy=currentFile-direct candidate='{old_curr}'")
+            # 番号がない場合の軽微なタイポのみ。複数の近い候補がある場合は保留。
+            if new_file is None and original_track_num is None:
+                ranked = sorted(
+                    [(difflib.SequenceMatcher(None, title, orig_norm).ratio(), name)
+                     for title, names in by_title.items() for name in names
+                     if is_vocal_candidate_available(track, name)], reverse=True
+                )
+                if ranked and ranked[0][0] >= 0.85 and (len(ranked) == 1 or ranked[0][0] - ranked[1][0] >= 0.1):
+                    new_file, strategy = ranked[0][1], "fuzzy-unique"
+            print(f"[DEBUG][Step3][MATCH] strategy={strategy} original='{original_file}' candidate='{new_file}'")
 
             # それでも無ければスキップ（ユーザーに後で表示）
             if not new_file:
@@ -568,14 +462,14 @@ class Step3TaggingPanel(QWidget):
             for key in ("currentInstFile", "instrumentalFile"):
                 existing = track.get(key)
                 found = _find_by_basename(existing) if existing else None
-                if found and found not in assigned_inst_files and self._is_instrumental_by_name(found.lower()):
+                if available(track, found, assigned_inst_files, inst_owners) and self._is_instrumental_by_name(found.lower()):
                     inst_partner = found
                     break
             if inst_partner is None:
                 candidates = set(by_title_inst.get(norm_title(new_file), []))
                 if not candidates:
                     candidates = set(by_title_inst.get(orig_norm, []))
-                candidates -= assigned_inst_files
+                candidates = {name for name in candidates if available(track, name, assigned_inst_files, inst_owners) and same_disc(new_file, name)}
                 if len(candidates) == 1:
                     inst_partner = candidates.pop()
 
@@ -625,7 +519,9 @@ class Step3TaggingPanel(QWidget):
         # 2. 元々state.jsonに存在したインストトラックの処理
         for track in inst_track_items:
             original_file = track.get("originalFile", "")
-            found_original = _find_by_basename(original_file)
+            found_original = _find_by_basename(track.get("currentFile") or original_file)
+            if not found_original:
+                found_original = _find_by_basename(original_file)
             
             if (found_original and found_original in assigned_inst_files) or (original_file in assigned_inst_files):
                 print(f"[DEBUG][Step3][INST] インストトラック '{original_file}' はボーカル曲のインストとして紐づけ済みのため独立トラックから除外")
@@ -1358,8 +1254,12 @@ class Step3TaggingPanel(QWidget):
         if dialog.exec():
             # 更新されたトラック情報を保存
             updated_tracks = dialog.get_updated_tracks()
+            previous_tracks = self.workflow.state.get_tracks()
             self.workflow.state.state["tracks"] = updated_tracks
-            self.workflow.state.save()
+            if not self.workflow.state.save():
+                self.workflow.state.state["tracks"] = previous_tracks
+                QMessageBox.warning(self, "保存エラー", "手動紐づけを保存できませんでした。")
+                return
             
             # UIを更新
             self.update_file_mapping()

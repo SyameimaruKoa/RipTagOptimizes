@@ -12,7 +12,7 @@ from PySide6.QtGui import QDesktopServices
 
 from logic.config_manager import ConfigManager
 from logic.workflow_manager import WorkflowManager
-from logic.demucs_detector import detect_demucs_targets, extract_instrumental_files, INSTRUMENTAL_FILENAMES
+from logic.demucs_detector import detect_demucs_targets, extract_instrumental_files
 from logic.utils import sanitize_foldername
 from logic.external_tools import ExternalToolRunner
 
@@ -398,27 +398,13 @@ class Step2DemucsPanel(QWidget):
     def on_demucs_completed(self):
         """Demucs完了ボタン"""
         
-        # 対象フォルダ（_flac_src/アルバム名）を取得
-        target_dir = ""
-        if self.workflow.state and self.workflow.state.album_folder:
-            album_name = self.workflow.state.state.get("albumName", "Unknown")
-            sanitized_album_name = self._sanitize_foldername(album_name)
-            target_dir = os.path.join(self.workflow.state.album_folder, "_flac_src", sanitized_album_name)
-
-        folder = None
-        
-        # まず処理前ファイルが有る場所（target_dir）以下を探索して自動検出を試みる
-        if target_dir and os.path.exists(target_dir):
-            for root, dirs, files in os.walk(target_dir):
-                if "demucs_ignore" in root:
-                    continue
-                if any(f.lower() in INSTRUMENTAL_FILENAMES for f in files):
-                    # インストファイルが見つかったフォルダの親をDemucs出力ルートとみなす
-                    possible_folder = os.path.dirname(root)
-                    if extract_instrumental_files(possible_folder):
-                        folder = possible_folder
-                        print(f"[DEBUG] ローカル処理済みフォルダを自動検出: {folder}")
-                        break
+        if not self.workflow.state or not self.album_folder:
+            return
+        target_dir = self._get_flac_src_dir()
+        # アルバム全体を探索し、最初に見つかったモデルの親だけに探索を狭めない。
+        local_files = extract_instrumental_files(target_dir)
+        folder = target_dir if any(self._find_original_for_song(os.path.basename(root))
+                                   for root, _ in local_files) else None
 
         # 自動検出で見つからなかった場合のみダイアログを表示
         if not folder:
@@ -437,7 +423,9 @@ class Step2DemucsPanel(QWidget):
                 return
 
         # 初めに退避したファイルを元に戻す（完了処理が進行するため）
-        self._restore_non_target_files()
+        if not self._restore_non_target_files():
+            QMessageBox.warning(self, "復元失敗", "隔離した音源を戻せませんでした。Step 2に留まります。")
+            return
 
         # インストファイルを抽出
         inst_files = extract_instrumental_files(folder)
@@ -452,15 +440,17 @@ class Step2DemucsPanel(QWidget):
 
         # アクティブアルバムの曲に対応するものだけにフィルタリング（重複排除）
         filtered_inst_files = []
-        seen_song_names = set()
+        seen_originals = set()
         for song_folder, inst_file in inst_files:
             song_name = os.path.basename(song_folder)
-            if song_name in seen_song_names:
-                continue
             orig_file_path = self._find_original_for_song(song_name)
             if orig_file_path:
+                original_key = os.path.normcase(os.path.realpath(orig_file_path))
+                if original_key in seen_originals:
+                    QMessageBox.warning(self, "重複したDemucs出力", f"同じ原曲の出力が複数あります: {song_name}\n使用する出力フォルダを絞って選択してください。")
+                    return
                 filtered_inst_files.append((song_folder, inst_file, orig_file_path))
-                seen_song_names.add(song_name)
+                seen_originals.add(original_key)
             else:
                 print(f"[DEBUG] 他アルバムの曲のためスキップ: {song_name}")
 
@@ -595,7 +585,9 @@ class Step2DemucsPanel(QWidget):
         
         if reply == QMessageBox.Yes:
             # 退避したファイルを元に戻す
-            self._restore_non_target_files()
+            if not self._restore_non_target_files():
+                QMessageBox.warning(self, "復元失敗", "隔離した音源を戻せませんでした。Step 2に留まります。")
+                return
 
             # フラグを設定
             if self.workflow.state:
@@ -750,37 +742,35 @@ class Step2DemucsPanel(QWidget):
         if moved_count > 0:
             print(f"[INFO] 合計 {moved_count} 個のファイルを demucs_ignore に退避しました。")
 
-    def _restore_non_target_files(self):
-        """demucs_ignore フォルダに退避されたファイルを元の場所に戻す"""
+    def _restore_non_target_files(self) -> bool:
+        """隔離した全音源を戻せた場合だけTrueを返す。衝突時は両方を保持する。"""
         ignore_dir = self._get_demucs_ignore_dir()
         if not os.path.exists(ignore_dir):
-            return
-            
-        flac_src_dir = self._get_flac_src_dir()
+            return True
         import shutil
-        restored_count = 0
-        
-        for name in os.listdir(ignore_dir):
-            src_path = os.path.join(ignore_dir, name)
-            dst_path = os.path.join(flac_src_dir, name)
-            if os.path.isfile(src_path):
-                # 既に同名がある場合は上書きしないようリネームするかそのままにするか（基本は移動して戻すだけなので衝突しないはず）
-                if not os.path.exists(dst_path):
-                    try:
-                        shutil.move(src_path, dst_path)
-                        restored_count += 1
-                        print(f"[INFO] 復元: {name}")
-                    except Exception as e:
-                        print(f"[ERROR] ファイルの復元に失敗しました: {name} ({e})")
-                else:
-                    print(f"[WARN] 復元先にファイルが既に存在するためスキップします: {name}")
-                    
-        if restored_count > 0:
-            print(f"[INFO] 合計 {restored_count} 個のファイルを demucs_ignore から復元しました。")
-        
-        # 中が空ならフォルダを削除
-        if not os.listdir(ignore_dir):
-            try:
-                os.rmdir(ignore_dir)
-            except Exception:
-                pass
+        flac_src_dir = self._get_flac_src_dir()
+        errors = []
+        try:
+            for name in os.listdir(ignore_dir):
+                src_path = os.path.join(ignore_dir, name)
+                dst_path = os.path.join(flac_src_dir, name)
+                if not os.path.isfile(src_path):
+                    errors.append(f"隔離フォルダ内の未処理項目: {name}")
+                    continue
+                if os.path.exists(dst_path):
+                    errors.append(f"復元先に同名のファイルがあります: {name}")
+                    continue
+                try:
+                    shutil.move(src_path, dst_path)
+                except OSError as exc:
+                    errors.append(f"音源の復元失敗: {name}: {exc}")
+            if not os.listdir(ignore_dir):
+                try:
+                    os.rmdir(ignore_dir)
+                except OSError:
+                    pass  # 空のフォルダだけ残っても音源の復元は完了している。
+        except OSError as exc:
+            errors.append(str(exc))
+        for error in errors:
+            print(f"[ERROR] {error}")
+        return not errors
