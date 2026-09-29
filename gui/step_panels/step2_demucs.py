@@ -12,7 +12,7 @@ from PySide6.QtGui import QDesktopServices
 
 from logic.config_manager import ConfigManager
 from logic.workflow_manager import WorkflowManager
-from logic.demucs_detector import detect_demucs_targets, extract_instrumental_files
+from logic.demucs_detector import detect_demucs_targets, extract_instrumental_files, INSTRUMENTAL_FILENAMES
 from logic.utils import sanitize_foldername
 from logic.external_tools import ExternalToolRunner
 
@@ -412,7 +412,7 @@ class Step2DemucsPanel(QWidget):
             for root, dirs, files in os.walk(target_dir):
                 if "demucs_ignore" in root:
                     continue
-                if any(f.lower() in ['no_vocals.wav', 'minus_vocals.flac'] for f in files):
+                if any(f.lower() in INSTRUMENTAL_FILENAMES for f in files):
                     # インストファイルが見つかったフォルダの親をDemucs出力ルートとみなす
                     possible_folder = os.path.dirname(root)
                     if extract_instrumental_files(possible_folder):
@@ -446,7 +446,7 @@ class Step2DemucsPanel(QWidget):
             QMessageBox.warning(
                 self,
                 "エラー",
-                "指定されたフォルダ内に no_vocals.wav または minus_vocals.flac が見つかりませんでした。"
+                "指定されたフォルダ内に no_vocals / minus_vocals の WAV・FLAC が見つかりませんでした。"
             )
             return
 
@@ -476,7 +476,7 @@ class Step2DemucsPanel(QWidget):
         success_count = 0
         flac_path = self.config.get_tool_path("Flac")
 
-        if not flac_path:
+        if not flac_path and any(inst.lower().endswith('.wav') for _, inst, _ in filtered_inst_files):
             QMessageBox.warning(
                 self,
                 "警告",
@@ -524,82 +524,13 @@ class Step2DemucsPanel(QWidget):
                 print(f"[ERROR] 出力ディレクトリの作成に失敗: {e}")
                 continue
             
-            # アルバム名サブフォルダを含むパス
-            album_name = self.workflow.state.get_album_name() if self.workflow.state else "Unknown"
-            sanitized_album_name = self._sanitize_foldername(album_name)
-            flac_album_dir = os.path.join(flac_src_dir, sanitized_album_name)
-            os.makedirs(flac_album_dir, exist_ok=True)
-            
-            output_flac = os.path.join(flac_album_dir, f"{song_name} (Inst).flac")
-            
-            # パスの長さチェック（Windows の MAX_PATH 制限対策）
-            if len(output_flac) > 260:
-                print(f"[WARNING] 出力パスが長すぎます ({len(output_flac)} 文字): {output_flac}")
-                # 短縮版のファイル名を使用
-                short_name = song_name[:50] if len(song_name) > 50 else song_name
-                output_flac = os.path.join(flac_album_dir, f"{short_name} (Inst).flac")
-                print(f"[INFO] 短縮パスを使用: {output_flac}")
-            
-            # WAVの場合はFLACに変換
-            if inst_file.lower().endswith('.wav'):
-                # 絶対パスに変換
-                inst_file_abs = os.path.abspath(inst_file)
-                output_flac_abs = os.path.abspath(output_flac)
-                
-                # 既に出力ファイルが存在する場合は削除
-                if os.path.exists(output_flac_abs):
-                    try:
-                        os.remove(output_flac_abs)
-                        print(f"[INFO] 既存ファイルを削除: {output_flac_abs}")
-                    except Exception as e:
-                        print(f"[ERROR] 既存ファイルの削除に失敗: {e}")
-                        continue
-                
-                # flac -8 input.wav -o output.flac
-                # --keep-foreign-metadata オプションを追加してWARNINGを回避
-                runner = ExternalToolRunner()
-                success, stdout, stderr = runner.run_cli_tool(
-                    flac_path,
-                    ["-8", "--keep-foreign-metadata", inst_file_abs, "-o", output_flac_abs],
-                    self.album_folder
-                )
-                
-                if not success:
-                    print(f"[ERROR] FLAC変換失敗: {stderr}")
-                    print(f"[INFO] 入力ファイル: {inst_file_abs}")
-                    print(f"[INFO] 出力ファイル: {output_flac_abs}")
-                    print(f"[INFO] 出力ディレクトリの存在: {os.path.exists(os.path.dirname(output_flac_abs))}")
-                    print(f"[INFO] 出力ディレクトリの書き込み権限: {os.access(os.path.dirname(output_flac_abs), os.W_OK)}")
-                    continue
-            else:
-                # 既にFLACの場合は移動（重複時は上書き）
-                import shutil
-                try:
-                    if os.path.exists(output_flac):
-                        os.remove(output_flac)
-                    shutil.move(inst_file, output_flac)
-                except Exception as e:
-                    print(f"[ERROR] ファイル移動失敗: {e}")
-                    continue
-            
-            # 元のトラックのタグをコピーし、ジャンルのみ "Instrumental" に変更
+            # _get_flac_src_dir()は既にアルバム名を含む。二重階層にしない。
+            output_name = self._sanitize_foldername(f"{song_name} (Inst).flac")
+            output_flac = os.path.join(flac_src_dir, output_name)
             try:
-                from mutagen.flac import FLAC
-                dest = FLAC(output_flac)
-                if orig_file_path and os.path.exists(orig_file_path):
-                    src = FLAC(orig_file_path)
-                    # 既存タグをクリアしてコピー
-                    dest.delete()
-                    for k, v in src.tags.items():
-                        dest[k] = v
-                    # 画像もコピー
-                    dest.clear_pictures()
-                    for pic in src.pictures:
-                        dest.add_picture(pic)
-                # ジャンルだけ上書き
-                dest["genre"] = ["Instrumental"]
-                dest.save()
-                
+                from logic.instrumental_import import import_instrumental
+                import_instrumental(inst_file, orig_file_path, output_flac, flac_path, self.album_folder)
+
                 # state.json を更新: 元トラックに instrumentalFile を追加
                 if orig_file_path and self.workflow.state:
                     # 元トラックのIDを探す
@@ -615,12 +546,18 @@ class Step2DemucsPanel(QWidget):
                         # インストファイルの相対パス（ファイル名のみ）
                         inst_filename = os.path.basename(output_flac)
                         print(f"[INFO] state.json を更新: {track_id} に instrumentalFile = {inst_filename}")
-                        self.workflow.state.update_track(track_id, {
+                        if not self.workflow.state.update_track(track_id, {
                             "instrumentalFile": inst_filename,
+                            "currentInstFile": inst_filename,
                             "hasInstrumental": True
-                        })
+                        }):
+                            raise OSError("インストの進捗を保存できませんでした")
                     else:
-                        print(f"[WARNING] 元トラックのIDが見つかりません: {orig_basename}")
+                        raise ValueError(f"元トラックのIDが見つかりません: {orig_basename}")
+
+                # 出力と進捗を保存した後にFLAC入力の移動を完了する。
+                if inst_file.lower().endswith('.flac') and not os.path.samefile(inst_file, output_flac):
+                    os.remove(inst_file)
                 
                 success_count += 1
             except Exception as e:
@@ -638,7 +575,10 @@ class Step2DemucsPanel(QWidget):
                 "完了",
                 f"{success_count} 個のインストゥルメンタル版を作成しました"
             )
-            self.step_completed.emit()
+            if success_count == len(filtered_inst_files):
+                self.step_completed.emit()
+            else:
+                QMessageBox.warning(self, "一部失敗", "失敗した曲があります。Step 2に留まり、再取り込みできます。")
         else:
             QMessageBox.warning(self, "エラー", "インストゥルメンタル版の作成に失敗しました。")
     
@@ -659,7 +599,9 @@ class Step2DemucsPanel(QWidget):
 
             # フラグを設定
             if self.workflow.state:
-                self.workflow.state.set_flag("step2_skipped", True)
+                if not self.workflow.state.set_flag("step2_skipped", True):
+                    QMessageBox.warning(self, "保存エラー", "スキップ状態の保存に失敗しました。")
+                    return
             
             self.step_completed.emit()
 
@@ -676,41 +618,42 @@ class Step2DemucsPanel(QWidget):
     # 内部ヘルパー
     # ==========================================================
     def _find_original_for_song(self, song_name: str) -> str | None:
-        """Demucsサブフォルダ名から対応する原曲FLACファイルを推定しパスを返す。
-        - トラック番号/拡張子/インストキーワードを除去して正規化し比較
-        """
+        """原曲を一意に特定する。曲名中のドットやディスク・曲番号を保持する。"""
         if not self.workflow.state or not self.album_folder:
             return None
+        import re
 
-        import re, os
-        keywords = self.config.get_demucs_keywords() or []
-        # 正規化関数
-        def norm(s: str) -> str:
-            base = re.sub(r'\.[^.]+$', '', s)
-            base = re.sub(r'^\d+[\s\-\.]*', '', base)
-            # キーワード除去
-            for kw in keywords:
-                base = re.sub(fr'(?i)\s*[\(\[\-]?{re.escape(kw)}[\)\]\-]?','', base)
-            return base.strip().lower()
+        def stem(name):
+            name = os.path.basename(name)
+            return name[:-5] if name.lower().endswith(".flac") else name
 
-        target_norm = norm(song_name)
-        if not target_norm:
-            return None
+        def identity(name):
+            name = stem(name).casefold().strip()
+            match = re.match(r"^(?:disc\s+(\d+)-)?(\d+)[\s.．-]+", name)
+            number = (int(match.group(1) or 1), int(match.group(2))) if match else None
+            title = name[match.end():].strip() if match else name
+            return number, title
 
+        exact = set()
+        candidates = set()
+        target_number, target_title = identity(song_name)
         for track in self.workflow.state.get_tracks():
-            orig = track.get("originalFile")
-            if not orig:
+            if track.get("isInstrumental") or track.get("demucsTarget") is False:
                 continue
-            if norm(orig) == target_norm:
-                # _flac_src を優先的に探索
-                flac_src_dir = self._get_flac_src_dir()
-                candidate1 = os.path.join(flac_src_dir, orig)
-                candidate2 = os.path.join(self.album_folder, orig)
-                if os.path.exists(candidate1):
-                    return candidate1
-                if os.path.exists(candidate2):
-                    return candidate2
-        return None
+            names = [n for n in (track.get("currentFile"), track.get("originalFile")) if n]
+            paths = [os.path.join(base, name) for name in names
+                     for base in (self._get_flac_src_dir(), self.album_folder)]
+            path = next((p for p in paths if os.path.isfile(p)), None)
+            if not path:
+                continue
+            for name in names:
+                if stem(name).casefold() == stem(song_name).casefold():
+                    exact.add(path)
+                number, title = identity(name)
+                if title == target_title and (target_number is None or number is None or target_number == number):
+                    candidates.add(path)
+        matches = exact or candidates
+        return next(iter(matches)) if len(matches) == 1 else None
 
     def _get_flac_src_dir(self) -> str:
         """FLAC のソース置き場 (_flac_src/アルバム名) の実パスを返す。state の設定があればそれを使う。"""

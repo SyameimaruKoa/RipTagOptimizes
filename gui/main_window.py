@@ -629,6 +629,10 @@ class MainWindow(QMainWindow):
     
     def closeEvent(self, event):
         """ウィンドウを閉じるときの処理"""
+        if self.step1_panel.importing:
+            QMessageBox.warning(self, "取り込み中", "取り込みが終了するまでお待ちください。")
+            event.ignore()
+            return
         # 実行中のプロセスがあれば警告
         reply = QMessageBox.question(
             self,

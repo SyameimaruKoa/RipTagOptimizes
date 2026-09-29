@@ -325,12 +325,11 @@ class Step3TaggingPanel(QWidget):
             return os.path.basename(fpath)
 
         def _find_by_basename(filename: str) -> str | None:
-            # ベース名だけで一致するものを current_flac_files から見つける
+            if filename in current_flac_files:
+                return filename
             target = _get_basename(filename)
-            for f in current_flac_files:
-                if _get_basename(f) == target:
-                    return f
-            return None
+            matches = [f for f in current_flac_files if _get_basename(f) == target]
+            return matches[0] if len(matches) == 1 else None
 
         # 1) 先頭のトラック番号で紐づけ辞書を作る (最優先)
         #    同じトラック番号で「(Inst)」と通常版が両方ある場合は Inst を優先
@@ -384,7 +383,7 @@ class Step3TaggingPanel(QWidget):
             return base.strip().lower()
 
         by_title: dict[str, str] = {}
-        by_title_inst: dict[str, str] = {}
+        by_title_inst: dict[str, list[str]] = {}
         
         # 元曲ファイル名からトラック番号なしのタイトルへのマッピング
         # 例: "02-虹.flac" -> "虹"
@@ -402,21 +401,9 @@ class Step3TaggingPanel(QWidget):
                     by_title_no_ver_vocal[key_no_ver_vocal] = []
                 by_title_no_ver_vocal[key_no_ver_vocal].append(f)
 
-            # Inst専用マップ: バージョン情報を削除して広くマッチング
+            # バージョンを保持したタイトルごとに全候補を残す。
             if self._is_instrumental_by_name(f.lower()):
-                key_no_ver = norm_title(f, remove_version_info=True)
-                # 複数のインストファイルがある場合、最新のものを使用
-                if key_no_ver not in by_title_inst:
-                    by_title_inst[key_no_ver] = f
-                    print(f"[DEBUG] Instマップに追加: '{key_no_ver}' -> '{f}'")
-                else:
-                    # 既存のファイルと比較して、より適切な方を選択
-                    existing = by_title_inst[key_no_ver]
-                    # "02-虹 (Inst).flac" よりも "2 虹 (Instrumental) (StemRoller).flac" を優先
-                    # 判定: より長いファイル名、または (StemRoller) を含む方を優先
-                    if "(StemRoller)" in f or len(f) > len(existing):
-                        by_title_inst[key_no_ver] = f
-                        print(f"[DEBUG] Instマップを更新: '{key_no_ver}' -> '{f}' (旧: '{existing}')")
+                by_title_inst.setdefault(norm_title(f), []).append(f)
             else:
                 # 元曲の場合、トラック番号なしのタイトルをマッピング
                 key_no_ver = norm_title(f, remove_version_info=True)
@@ -426,7 +413,7 @@ class Step3TaggingPanel(QWidget):
         tracks = self.workflow.state.get_tracks()
         print(f"[DEBUG][Step3] state tracks 読込: track_count={len(tracks)}")
         
-        existing_original_files = {track.get("originalFile", "") for track in tracks}
+        used_track_ids = {track.get("id") for track in tracks}
         processed_files = set()
         assigned_vocal_files = set()
         assigned_inst_files = set()
@@ -563,6 +550,8 @@ class Step3TaggingPanel(QWidget):
                 self._append_mapping_row_not_found(original_file)
                 print(f"[WARN][Step3][MATCH] strategy=not-found original='{original_file}'")
                 track["currentFile"] = ""
+                track["finalFile"] = ""
+                track["hasInstrumental"] = False
                 track.pop("isInstrumental", None)
                 track.pop("instrumentalFile", None)
                 track.pop("currentInstFile", None)
@@ -573,49 +562,22 @@ class Step3TaggingPanel(QWidget):
             processed_files.add(new_file)
             print(f"[DEBUG][Step3][MATCH] selected original='{original_file}' -> current='{new_file}'")
 
-            # 同タイトルのInstパートナーを探す
+            # 明示済みの対応、次に一意なタイトル一致だけを採用する。
+            # 同じインストの複数原曲への割当と、低い類似度による誤同期を防ぐ。
             inst_partner = None
-            new_norm_no_ver = norm_title(new_file, remove_version_info=True)
-
-            # まず完全一致で自動検出を試す
-            auto_detected = by_title_inst.get(new_norm_no_ver)
-            if not auto_detected:
-                # originalFileのタイトルでも一応試す
-                auto_detected = by_title_inst.get(orig_norm_no_ver)
-
-            if not auto_detected:
-                # difflibを使って類似タイトルをインストマップから探す
-                import difflib
-                best_inst_match = None
-                best_inst_ratio = 0
-                for title_key, file_path in by_title_inst.items():
-                    ratio = difflib.SequenceMatcher(None, title_key, new_norm_no_ver).ratio()
-                    if ratio > best_inst_ratio and ratio >= 0.4:
-                        best_inst_ratio = ratio
-                        best_inst_match = file_path
-                if best_inst_match:
-                    auto_detected = best_inst_match
-
-            if auto_detected:
-                inst_partner = auto_detected
-                print(f"[DEBUG][Step3][INST] 自動検出でinstrumentalFileを発見: title_key='{new_norm_no_ver}' -> '{inst_partner}'")
-            else:
-                # 自動検出できない場合、state.jsonに記録済みのinstrumentalFileを使用
-                existing_inst = track.get("instrumentalFile")
-                found_inst = _find_by_basename(existing_inst) if existing_inst else None
-                
-                # if existing_inst was not found, check currentInstFile just in case
-                if not found_inst:
-                    existing_inst_curr = track.get("currentInstFile")
-                    found_inst = _find_by_basename(existing_inst_curr) if existing_inst_curr else None
-
-                if found_inst:
-                    inst_partner = found_inst
-                    print(f"[DEBUG][Step3][INST] 既存のinstrumentalFileを使用: {original_file} -> {inst_partner}")
-                else:
-                    print(f"[DEBUG][Step3][INST] インストファイルが見つかりません: {original_file} (normalized: '{new_norm_no_ver}')")
-                    track.pop("instrumentalFile", None)
-                    track.pop("currentInstFile", None)
+            for key in ("currentInstFile", "instrumentalFile"):
+                existing = track.get(key)
+                found = _find_by_basename(existing) if existing else None
+                if found and found not in assigned_inst_files and self._is_instrumental_by_name(found.lower()):
+                    inst_partner = found
+                    break
+            if inst_partner is None:
+                candidates = set(by_title_inst.get(norm_title(new_file), []))
+                if not candidates:
+                    candidates = set(by_title_inst.get(orig_norm, []))
+                candidates -= assigned_inst_files
+                if len(candidates) == 1:
+                    inst_partner = candidates.pop()
 
             # FLACファイルからタグ情報を読み取り、最終ファイル名を生成
             final_filename = self._generate_final_filename(new_file)
@@ -689,14 +651,21 @@ class Step3TaggingPanel(QWidget):
             else:
                 self._append_mapping_row_not_found(original_file)
                 track["currentFile"] = ""
+                track["finalFile"] = ""
+                track["hasInstrumental"] = False
                 final_tracks.append(track)
 
         # 3. 未処理のインストファイル（state.jsonに存在しない新規Demucs生成ファイル等）を独立トラックとして追加
         for flac_file in current_flac_files:
             if flac_file not in processed_files and self._is_instrumental_by_name(flac_file.lower()):
                 final_filename = self._generate_final_filename(flac_file)
+                next_id = 1
+                while f"track_{next_id:03d}" in used_track_ids:
+                    next_id += 1
+                track_id = f"track_{next_id:03d}"
+                used_track_ids.add(track_id)
                 new_track = {
-                    "id": f"track_{len(final_tracks) + 1:03d}",
+                    "id": track_id,
                     "originalFile": flac_file,
                     "finalFile": final_filename,
                     "currentFile": flac_file,
@@ -710,39 +679,8 @@ class Step3TaggingPanel(QWidget):
                 self._append_mapping_row_inst_only(flac_file, final_filename)
                 print(f"[DEBUG][Step3][INST] 未処理の新規インストトラックを追加: {flac_file} -> {final_filename}")
         
-        # 4. 独立インストトラックのトラック番号を再採番
-        vocal_tracks = []
-        independent_inst_tracks = []
-        
-        for track in final_tracks:
-            is_inst = track.get("isInstrumental", False)
-            has_final = bool(track.get("finalFile"))
-            
-            if not has_final:
-                continue
-            
-            if is_inst:
-                independent_inst_tracks.append(track)
-            else:
-                vocal_tracks.append(track)
-        
-        if independent_inst_tracks:
-            next_track_num = len(vocal_tracks) + 1
-            
-            for inst_track in independent_inst_tracks:
-                final_file = inst_track.get("finalFile", "")
-                if not final_file:
-                    continue
-                
-                m = re.match(r"^(?:Disc \d+-)?(\d{2,3})\s+(.+)$", final_file)
-                if m:
-                    old_num = m.group(1)
-                    title_part = m.group(2)
-                    new_num = str(next_track_num).zfill(2)
-                    new_final_file = f"{new_num} {title_part}"
-                    inst_track["finalFile"] = new_final_file
-                    print(f"[DEBUG][Step3][INST] 独立インストトラックのトラック番号を再採番: {old_num} -> {new_num} ({title_part})")
-                    next_track_num += 1
+        # 再スキャンでは既存音源の番号・ディスクを変更しない。
+        # 生成インストの採番は実ファイルのタグも更新する同期処理で行う。
 
         print(f"[DEBUG][Step3] update_file_mapping 完了: assigned_vocal={len(assigned_vocal_files)}, processed_files={len(processed_files)}, final_tracks={len(final_tracks)}")
         
@@ -938,8 +876,11 @@ class Step3TaggingPanel(QWidget):
 
     def _is_instrumental_by_name(self, lower_name: str) -> bool:
         """ファイル名だけで簡易判定（小文字を渡す）"""
-        keywords = ["inst", "instrumental", "off vocal", "off-vocal", "offvocal", "backing track", "karaoke", "voiceless", "minus one", "オリジナル・カラオケ", "インスト", "オフボーカル", "オフボ", "カラオケ", "歌無し"]
-        return any(k in lower_name for k in keywords)
+        import re
+        name = os.path.basename(lower_name.replace('\\', '/'))
+        english = r"\b(?:inst(?:rumental)?|off[ -]?vocal|backing track|karaoke|voiceless|minus one)\b"
+        japanese = ("オリジナル・カラオケ", "インスト", "オフボーカル", "オフボ", "カラオケ", "歌無し")
+        return bool(re.search(english, name, re.IGNORECASE)) or any(k in name for k in japanese)
 
     def _generate_final_filename(self, current_filename: str) -> str:
         """FLACファイルからタグ情報を読み取り、最終的なファイル名を生成する
@@ -1035,7 +976,7 @@ class Step3TaggingPanel(QWidget):
             self,
             "確認",
             "手動でタグ付けされた原曲のメタデータを、生成されたインストへ自動コピーします。\n\n"
-            "※同名のインストファイルは上書き・リネームされます。\n"
+            "※インストのタグと名前を更新します。別の音源と名前が衝突する場合は更新しません。\n"
             "実行しますか？",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.Yes
@@ -1069,12 +1010,9 @@ class Step3TaggingPanel(QWidget):
         max_track_per_disc = {}
         inst_count_per_disc = {}
         inst_index_map = {}
-        inst_counters = {}
+        inst_candidates = {}
         for track in tracks:
-            # インストファイル自体は除外して、原曲のトラック番号を集計
-            if track.get("isInstrumental"):
-                continue
-                
+            # CDに含まれる独立インストも既存のトラック番号として数える。
             orig_filename = track.get("currentFile") or track.get("originalFile")
             if orig_filename:
                 orig_path = os.path.join(flac_src_dir, orig_filename)
@@ -1094,11 +1032,14 @@ class Step3TaggingPanel(QWidget):
                             
                         if track.get("demucsTarget") and track.get("hasInstrumental"):
                             inst_count_per_disc[d_num] = inst_count_per_disc.get(d_num, 0) + 1
-                            inst_counters[d_num] = inst_counters.get(d_num, 0) + 1
-                            inst_index_map[track["id"]] = inst_counters[d_num]
+                            inst_candidates.setdefault(d_num, []).append((int(t_num), track["id"]))
                     except Exception:
                         pass
         
+        for candidates in inst_candidates.values():
+            for index, (_, track_id) in enumerate(sorted(candidates), 1):
+                inst_index_map[track_id] = index
+
         if not max_track_per_disc:
             max_track_per_disc["1"] = len([t for t in tracks if not t.get("isInstrumental")])
 
@@ -1126,8 +1067,8 @@ class Step3TaggingPanel(QWidget):
                 orig_flac = FLAC(orig_path)
                 inst_flac = FLAC(inst_path)
 
-                inst_flac.delete() # 既存タグ削除
-                for k, v in orig_flac.tags.items():
+                inst_flac.clear()  # メモリ上だけでタグを置換
+                for k, v in (orig_flac.tags or {}).items():
                     inst_flac[k] = v
 
                 inst_flac.clear_pictures()
@@ -1176,14 +1117,13 @@ class Step3TaggingPanel(QWidget):
                     if orig_total.isdigit():
                         inst_flac["totaltracks"] = [str(int(orig_total) + inst_adds)]
 
-                inst_flac.save()
-
                 # 5. ファイル名のリネーム
                 ext = os.path.splitext(orig_filename)[1]
                 track_num_str = str(new_track_int).zfill(2)
 
                 # "%Track%-%title%" の形式にする
-                new_inst_basename = f"{track_num_str}-{new_title}{ext}"
+                disc_prefix = f"Disc {orig_disc_num}-" if str(orig_disc_num).isdigit() and int(orig_disc_num) > 1 else ""
+                new_inst_basename = f"{disc_prefix}{track_num_str}-{new_title}{ext}"
                 new_inst_basename = self._sanitize_filename(new_inst_basename)
 
                 # サブフォルダには留めず、直下に移動させる
@@ -1191,14 +1131,10 @@ class Step3TaggingPanel(QWidget):
                 
                 new_inst_path = os.path.join(flac_src_dir, new_inst_filename)
 
-                if inst_path != new_inst_path:
-                    if os.path.exists(new_inst_path):
-                        os.remove(new_inst_path)
-                    os.rename(inst_path, new_inst_path)
-                    
-                    # state.jsonへ反映
-                    track["instrumentalFile"] = new_inst_filename
-                    track["currentInstFile"] = new_inst_filename
+                from logic.instrumental_import import save_synced_instrumental
+                save_synced_instrumental(inst_path, new_inst_path, inst_flac)
+                track["instrumentalFile"] = new_inst_filename
+                track["currentInstFile"] = new_inst_filename
 
                 success_count += 1
 
@@ -1247,6 +1183,17 @@ class Step3TaggingPanel(QWidget):
         if reply == QMessageBox.Yes:
             # 完了時にサブフォルダ内ファイルを直下へ移動し、フラットな状態にする
             self._flatten_flac_dir()
+
+            self.update_file_mapping()
+            if not self.workflow.state or not self.workflow.state.get_tracks() or any(
+                not t.get("currentFile") or not t.get("finalFile")
+                for t in self.workflow.state.get_tracks()
+            ):
+                QMessageBox.warning(self, "未検出の曲があります", "ファイルの紐づけを確認してから完了してください。")
+                return
+            if not self.workflow.state.save():
+                QMessageBox.warning(self, "保存エラー", "紐づけの保存に失敗しました。")
+                return
             
             # ReplayGain 自動実行（設定で有効時のみ）
             self._apply_replaygain_if_enabled()
